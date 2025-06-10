@@ -1,825 +1,1170 @@
-  import 'package:flutter/material.dart';
-  import 'package:flutter_map/flutter_map.dart';
-  import 'package:latlong2/latlong.dart';
-  import 'package:http/http.dart' as http;
-  import 'dart:convert';
-  import 'dart:async';
-  import 'package:geolocator/geolocator.dart';
-  import 'package:geocoding/geocoding.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
+import 'dart:async';
+import 'dart:math' as math;
+import 'dart:ui' as ui; // Add this import for Path class
+import 'package:geolocator/geolocator.dart';
+import 'package:geocoding/geocoding.dart';
+import 'package:flutter_polyline_points/flutter_polyline_points.dart';
 
-  void main() {
-    runApp(WeatherRouteApp());
+void main() {
+  runApp(WeatherRadarApp());
+}
+
+class WeatherRadarApp extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'Radar Tutorial',
+      theme: ThemeData.dark().copyWith(
+        scaffoldBackgroundColor: Color(0xFF1a1a1a),
+        primaryColor: Colors.green,
+      ),
+      home: WeatherRadarScreen(),
+      debugShowCheckedModeBanner: false,
+    );
+  }
+}
+
+class WeatherData {
+  final double temperature;
+  final String description;
+  final String icon;
+  final double windSpeed;
+  final int humidity;
+  final double visibility;
+  final LatLng location;
+
+  WeatherData({
+    required this.temperature,
+    required this.description,
+    required this.icon,
+    required this.windSpeed,
+    required this.humidity,
+    required this.visibility,
+    required this.location,
+  });
+
+  factory WeatherData.fromJson(Map<String, dynamic> json, LatLng location) {
+    return WeatherData(
+      temperature: json['main']['temp'].toDouble(),
+      description: json['weather'][0]['description'],
+      icon: json['weather'][0]['icon'],
+      windSpeed: json['wind']['speed'].toDouble(),
+      humidity: json['main']['humidity'],
+      visibility: json['visibility'].toDouble() / 1000,
+      location: location,
+    );
+  }
+}
+
+class WeatherRadarScreen extends StatefulWidget {
+  @override
+  _WeatherRadarScreenState createState() => _WeatherRadarScreenState();
+  
+}
+
+class _WeatherRadarScreenState extends State<WeatherRadarScreen>
+    with TickerProviderStateMixin {
+  final MapController _mapController = MapController();
+  late AnimationController _radarAnimationController;
+  late AnimationController _pulseAnimationController;
+
+  List<Marker> _weatherMarkers = [];
+  List<Polyline> _polylines = [];
+  List<WeatherData> _weatherData = [];
+
+  double _timeSliderValue = 0.5;
+  bool _isPlaying = false;
+  String _selectedLocation = "Casablanca, MA";
+  double _currentTemp = 28.0;
+  String _roadCondition = "Route sèche à 22:01";
+
+  // Variables pour la destination
+  String _destination = "";
+  bool _showRouteWeather = false;
+  List<WeatherData> _routeWeatherData = [];
+  final TextEditingController _destinationController = TextEditingController();
+  bool _showDestinationSearch = true;
+  static const LatLng _casablancaCenter = LatLng(33.5731, -7.5898);
+
+  // Données de prévision
+  final List<Map<String, dynamic>> _forecastData = [
+    {
+      'day': 'VEN',
+      'icon': Icons.wb_cloudy,
+      'high': '25°',
+      'low': '19°',
+      'rain': '50%',
+      'color': Colors.blue
+    },
+    {
+      'day': 'SAM',
+      'icon': Icons.thunderstorm,
+      'high': '24°',
+      'low': '18°',
+      'rain': null,
+      'color': Colors.orange
+    },
+    {
+      'day': 'DIM',
+      'icon': Icons.thunderstorm,
+      'high': '26°',
+      'low': '20°',
+      'rain': null,
+      'color': Colors.orange
+    },
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    _radarAnimationController = AnimationController(
+      duration: Duration(seconds: 3),
+      vsync: this,
+    );
+    _pulseAnimationController = AnimationController(
+      duration: Duration(seconds: 2),
+      vsync: this,
+    )..repeat();
+
+    _initializeApp();
   }
 
-  class WeatherRouteApp extends StatelessWidget {
-    @override
-    Widget build(BuildContext context) {
-      return MaterialApp(
-        title: 'WeatherRoute AI - OpenStreetMap',
-        theme: ThemeData(
-          primarySwatch: Colors.blue,
-          visualDensity: VisualDensity.adaptivePlatformDensity,
-          useMaterial3: true,
-        ),
-        home: WeatherRouteScreen(),
-        debugShowCheckedModeBanner: false,
+  Future<void> _initializeApp() async {
+    await _getCurrentLocation();
+    _generateWeatherMarkers();
+  }
+
+  Future<void> _getCurrentLocation() async {
+    try {
+      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) return;
+
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+
+      Position position = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
       );
+
+      List<Placemark> placemarks = await placemarkFromCoordinates(
+        position.latitude,
+        position.longitude,
+      );
+
+      if (placemarks.isNotEmpty && mounted) {
+        Placemark place = placemarks[0];
+        setState(() {
+          _selectedLocation = "${place.locality ?? 'Position actuelle'}, ${place.country ?? 'MA'}";
+        });
+      }
+    } catch (e) {
+      print('Erreur géolocalisation: $e');
     }
   }
 
-  class WeatherData {
-    final double temperature;
-    final String description;
-    final String icon;
-    final double windSpeed;
-    final int humidity;
-    final double visibility;
-    final LatLng location;
+  void _generateWeatherMarkers() {
+    final List<LatLng> weatherPoints = [
+      LatLng(33.5731, -7.5898), // Casablanca
+      LatLng(34.0209, -6.8416), // Rabat
+      LatLng(31.6295, -7.9811), // Marrakech
+      LatLng(34.0181, -5.0078), // Fès
+      LatLng(35.7595, -5.8340), // Tanger
+      LatLng(30.4278, -9.5981), // Agadir
+    ];
 
-    WeatherData({
-      required this.temperature,
-      required this.description,
-      required this.icon,
-      required this.windSpeed,
-      required this.humidity,
-      required this.visibility,
-      required this.location,
-    });
-
-    factory WeatherData.fromJson(Map<String, dynamic> json, LatLng location) {
-      return WeatherData(
-        temperature: json['main']['temp'].toDouble(),
-        description: json['weather'][0]['description'],
-        icon: json['weather'][0]['icon'],
-        windSpeed: json['wind']['speed'].toDouble(),
-        humidity: json['main']['humidity'],
-        visibility: json['visibility'].toDouble() / 1000,
-        location: location,
-      );
-    }
-  }
-
-  class AIRecommendation {
-    final String message;
-    final String type;
-    final IconData icon;
-    final Color color;
-
-    AIRecommendation({
-      required this.message,
-      required this.type,
-      required this.icon,
-      required this.color,
-    });
-  }
-
-  class WeatherRouteScreen extends StatefulWidget {
-    @override
-    _WeatherRouteScreenState createState() => _WeatherRouteScreenState();
-  }
-
-  class _WeatherRouteScreenState extends State<WeatherRouteScreen> {
-    final MapController _mapController = MapController();
+    List<Marker> markers = [];
     
-    final TextEditingController _startController = TextEditingController();
-    final TextEditingController _endController = TextEditingController();
+    for (int i = 0; i < weatherPoints.length; i++) {
+      LatLng point = weatherPoints[i];
+      WeatherData weather = _generateDemoWeatherData(point);
+      _weatherData.add(weather);
 
-    List<Marker> _markers = [];
-    List<Polyline> _polylines = [];
-
-    List<WeatherData> _weatherData = [];
-    List<AIRecommendation> _recommendations = [];
-
-    final String _weatherApiKey = 'VOTRE_CLE_API_ICI';
-    bool _isLoading = false;
-
-    static const LatLng _casablancaCenter = LatLng(33.5731, -7.5898);
-
-    @override
-    void initState() {
-      super.initState();
-      _initializeApp();
-    }
-
-    Future<void> _initializeApp() async {
-      await _checkLocationPermission();
-      await _getCurrentLocation();
-      _addDefaultMarkersAndRoute();
-    }
-
-    void _addDefaultMarkersAndRoute() {
-      if (!mounted) return;
-      
-      setState(() {
-        _markers = [
-          Marker(
-            point: LatLng(33.5731, -7.5898),
-            width: 40,
-            height: 40,
-            child: Container(
-              decoration: BoxDecoration(
-                color: Colors.green,
-                shape: BoxShape.circle,
-                border: Border.all(color: Colors.white, width: 2),
-              ),
-              child: Icon(Icons.location_on, color: Colors.white, size: 24),
+      markers.add(
+        Marker(
+          point: point,
+          width: 60,
+          height: 60,
+          child: GestureDetector(
+            onTap: () => _showWeatherDetails(weather),
+            child: AnimatedBuilder(
+              animation: _pulseAnimationController,
+              builder: (context, child) {
+                return Transform.scale(
+                  scale: 1.0 + (_pulseAnimationController.value * 0.2),
+                  child: _buildWeatherMarker(weather),
+                );
+              },
             ),
           ),
-          Marker(
-            point: LatLng(34.0209, -6.8416),
-            width: 40,
-            height: 40,
-            child: Container(
-              decoration: BoxDecoration(
-                color: Colors.red,
-                shape: BoxShape.circle,
-                border: Border.all(color: Colors.white, width: 2),
-              ),
-              child: Icon(Icons.flag, color: Colors.white, size: 24),
-            ),
-          ),
-        ];
-
-        // Route par défaut Casablanca-Rabat (dotted effect using pattern)
-        _polylines = [
-          Polyline(
-            points: [
-              LatLng(33.5731, -7.5898), // Casablanca
-              LatLng(33.7031, -7.3898),
-              LatLng(33.8331, -7.1898),
-              LatLng(33.9631, -6.9898),
-              LatLng(34.0209, -6.8416), // Rabat
-            ],
-            strokeWidth: 4.0,
-            color: Colors.blue,
-            pattern: const StrokePattern.dotted(),
-          ),
-        ];
-      });
-    }
-
-    Future<void> _checkLocationPermission() async {
-      try {
-        bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
-        if (!serviceEnabled) {
-          print('Services de localisation désactivés');
-          return;
-        }
-
-        LocationPermission permission = await Geolocator.checkPermission();
-        if (permission == LocationPermission.denied) {
-          permission = await Geolocator.requestPermission();
-          if (permission == LocationPermission.denied) {
-            print('Permission de localisation refusée');
-            return;
-          }
-        }
-
-        if (permission == LocationPermission.deniedForever) {
-          print('Permission de localisation définitivement refusée');
-          return;
-        }
-      } catch (e) {
-        print('Erreur lors de la vérification des permissions: $e');
-      }
-    }
-
-    Future<void> _getCurrentLocation() async {
-      try {
-        Position position = await Geolocator.getCurrentPosition(
-          desiredAccuracy: LocationAccuracy.high,
-          timeLimit: Duration(seconds: 10),
-        );
-
-        List<Placemark> placemarks = await placemarkFromCoordinates(
-          position.latitude,
-          position.longitude,
-        ).timeout(Duration(seconds: 10));
-
-        if (placemarks.isNotEmpty && mounted) {
-          Placemark place = placemarks[0];
-          setState(() {
-            _startController.text =
-                "${place.locality ?? 'Position actuelle'}, ${place.country ?? ''}";
-          });
-        }
-      } catch (e) {
-        print('Erreur géolocalisation: $e');
-        if (mounted) {
-          setState(() {
-            _startController.text = "Casablanca, Maroc";
-            _endController.text = "Rabat, Maroc";
-          });
-        }
-      }
-    }
-
-    final Map<String, LatLng> _moroccanCities = {
-      'casablanca': LatLng(33.5731, -7.5898),
-      'rabat': LatLng(34.0209, -6.8416),
-      'marrakech': LatLng(31.6295, -7.9811),
-      'fes': LatLng(34.0181, -5.0078),
-      'tangier': LatLng(35.7595, -5.8340),
-      'meknes': LatLng(33.8935, -5.5473),
-      'oujda': LatLng(34.6867, -1.9114),
-      'kenitra': LatLng(34.2610, -6.5802),
-      'tetouan': LatLng(35.5889, -5.3626),
-      'safi': LatLng(32.2994, -9.2372),
-      'mohammedia': LatLng(33.6864, -7.3932),
-      'khouribga': LatLng(32.8811, -6.9063),
-      'el jadida': LatLng(33.2316, -8.5007),
-      'taza': LatLng(34.2133, -4.0180),
-      'settat': LatLng(33.0027, -7.6169),
-      'larache': LatLng(35.1932, -6.1557),
-      'agadir': LatLng(30.4278, -9.5981),
-      'essaouira': LatLng(31.5085, -9.7595),
-    };
-
-    LatLng? _findCityCoordinates(String cityName) {
-      String searchTerm = cityName
-          .toLowerCase()
-          .replaceAll('é', 'e')
-          .replaceAll('è', 'e')
-          .replaceAll('ç', 'c')
-          .replaceAll(RegExp(r'[^a-z\s]'), '');
-
-      if (_moroccanCities.containsKey(searchTerm)) {
-        return _moroccanCities[searchTerm];
-      }
-
-      for (String city in _moroccanCities.keys) {
-        if (city.contains(searchTerm) || searchTerm.contains(city)) {
-          return _moroccanCities[city];
-        }
-      }
-      return null;
-    }
-
-    Future<List<LatLng>> _getRouteCoordinates(String start, String end) async {
-      try {
-        LatLng? startPoint = _findCityCoordinates(start);
-        LatLng? endPoint = _findCityCoordinates(end);
-
-        if (startPoint == null || endPoint == null) {
-          try {
-            List<Location> startLocs = await locationFromAddress(start).timeout(Duration(seconds: 8));
-            List<Location> endLocs = await locationFromAddress(end).timeout(Duration(seconds: 8));
-
-            if (startLocs.isNotEmpty && startPoint == null) {
-              startPoint = LatLng(startLocs[0].latitude, startLocs[0].longitude);
-            }
-            if (endLocs.isNotEmpty && endPoint == null) {
-              endPoint = LatLng(endLocs[0].latitude, endLocs[0].longitude);
-            }
-          } catch (e) {
-            startPoint ??= _casablancaCenter;
-            endPoint ??= LatLng(34.0209, -6.8416);
-            _showMessage('Utilisation de coordonnées par défaut');
-          }
-        }
-
-        startPoint ??= _casablancaCenter;
-        endPoint ??= LatLng(34.0209, -6.8416);
-
-        List<LatLng> waypoints = [];
-        for (int i = 0; i <= 4; i++) {
-          double lat = startPoint.latitude + (endPoint.latitude - startPoint.latitude) * i / 4;
-          double lng = startPoint.longitude + (endPoint.longitude - startPoint.longitude) * i / 4;
-          waypoints.add(LatLng(lat, lng));
-        }
-
-        return waypoints;
-      } catch (e) {
-        print('Erreur dans _getRouteCoordinates: $e');
-        return [
-          LatLng(33.5731, -7.5898),
-          LatLng(33.7031, -7.3898),
-          LatLng(33.8331, -7.1898),
-          LatLng(33.9631, -6.9898),
-          LatLng(34.0209, -6.8416),
-        ];
-      }
-    }
-
-    WeatherData _generateDemoWeatherData(LatLng location) {
-      final random = (location.latitude + location.longitude).abs() % 100;
-
-      return WeatherData(
-        temperature: 20 + (random % 15),
-        description: ['Ensoleillé', 'Nuageux', 'Pluvieux', 'Venteux'][random.toInt() % 4],
-        icon: ['01d', '02d', '10d', '50d'][random.toInt() % 4],
-        windSpeed: 2 + (random % 8),
-        humidity: 40 + (random % 40).toInt(),
-        visibility: 8 + (random % 12),
-        location: location,
+        ),
       );
     }
 
-    List<AIRecommendation> _generateAIRecommendations(List<WeatherData> weatherData) {
-      List<AIRecommendation> recommendations = [];
+    setState(() {
+      _weatherMarkers = markers;
+    });
+  }
 
-      if (weatherData.isEmpty) return recommendations;
-
-      double avgTemp = weatherData.map((w) => w.temperature).reduce((a, b) => a + b) / weatherData.length;
-
-      if (avgTemp < 10) {
-        recommendations.add(AIRecommendation(
-          message: "🥶 Températures froides sur le trajet (${avgTemp.toStringAsFixed(1)}°C). Prévoyez des vêtements chauds.",
-          type: 'warning',
-          icon: Icons.ac_unit,
-          color: Colors.blue,
-        ));
-      } else if (avgTemp > 35) {
-        recommendations.add(AIRecommendation(
-          message: "🔥 Températures élevées (${avgTemp.toStringAsFixed(1)}°C). Hydratez-vous régulièrement.",
-          type: 'warning',
-          icon: Icons.whatshot,
-          color: Colors.orange,
-        ));
-      }
-
-      double maxWind = weatherData.map((w) => w.windSpeed).reduce((a, b) => a > b ? a : b);
-      if (maxWind > 10) {
-        recommendations.add(AIRecommendation(
-          message: "💨 Vents forts prévus (${maxWind.toStringAsFixed(1)} m/s). Réduisez votre vitesse.",
-          type: 'warning',
-          icon: Icons.air,
-          color: Colors.grey,
-        ));
-      }
-
-      if (avgTemp >= 15 && avgTemp <= 25 && maxWind < 5) {
-        recommendations.add(AIRecommendation(
-          message: "✅ Conditions météo idéales pour votre trajet ! 🌞",
-          type: 'good',
-          icon: Icons.wb_sunny,
-          color: Colors.green,
-        ));
-      }
-
-      return recommendations;
-    }
-
-    Future<void> _calculateRoute() async {
-      if (_startController.text.isEmpty || _endController.text.isEmpty) {
-        _showMessage('Veuillez remplir les champs de départ et destination');
-        return;
-      }
-
-      setState(() {
-        _isLoading = true;
-        _markers.clear();
-        _polylines.clear();
-        _weatherData.clear();
-        _recommendations.clear();
-      });
-
-      try {
-        List<LatLng> routeCoordinates = await _getRouteCoordinates(
-          _startController.text,
-          _endController.text,
-        );
-
-        if (routeCoordinates.isEmpty) {
-          throw Exception('Impossible de calculer l\'itinéraire');
-        }
-
-        if (mounted) {
-          setState(() {
-            _polylines = [
-              Polyline(
-                points: routeCoordinates,
-                strokeWidth: 4.0,
-                color: Colors.blue,
-                pattern: const StrokePattern.dotted(),
-              )
-            ];
-          });
-        }
-
-        // Génération des données météo et marqueurs
-        for (int i = 0; i < routeCoordinates.length; i++) {
-          if (!mounted) return;
-
-          WeatherData weather = _generateDemoWeatherData(routeCoordinates[i]);
-          _weatherData.add(weather);
-
-          Widget icon = _getWeatherIcon(weather.icon);
-          setState(() {
-            _markers.add(Marker(
-              point: routeCoordinates[i],
-              width: 40,
-              height: 40,
-              child: GestureDetector(
-                onTap: () => _showWeatherInfo(weather),
-                child: icon,
+  Widget _buildWeatherMarker(WeatherData weather) {
+    Color markerColor = _getWeatherColor(weather.description);
+    
+    return Container(
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        gradient: RadialGradient(
+          colors: [
+            markerColor.withOpacity(0.8),
+            markerColor.withOpacity(0.3),
+            Colors.transparent,
+          ],
+        ),
+      ),
+      child: Center(
+        child: Container(
+          width: 20,
+          height: 20,
+          decoration: BoxDecoration(
+            color: markerColor,
+            shape: BoxShape.circle,
+            border: Border.all(color: Colors.white, width: 2),
+            boxShadow: [
+              BoxShadow(
+                color: markerColor.withOpacity(0.5),
+                blurRadius: 8,
+                spreadRadius: 2,
               ),
-            ));
-          });
-        }
+            ],
+          ),
+          child: Icon(
+            _getWeatherIconData(weather.icon),
+            color: Colors.white,
+            size: 12,
+          ),
+        ),
+      ),
+    );
+  }
 
-        if (mounted) {
-          setState(() {
-            _recommendations = _generateAIRecommendations(_weatherData);
-          });
-        }
+  Color _getWeatherColor(String description) {
+    if (description.toLowerCase().contains('pluie')) return Colors.blue;
+    if (description.toLowerCase().contains('orage')) return Colors.red;
+    if (description.toLowerCase().contains('nuage')) return Colors.grey;
+    return Colors.green;
+  }
 
-        // Centrage de la carte
-        if (routeCoordinates.isNotEmpty) {
-          _mapController.fitCamera(
-            CameraFit.bounds(
-              bounds: LatLngBounds.fromPoints(routeCoordinates),
-              padding: EdgeInsets.all(50),
-            ),
-          );
-        }
-
-        _showMessage('Itinéraire calculé avec succès !', isSuccess: true);
-      } catch (e) {
-        _showMessage('Erreur: $e');
-        print('Erreur détaillée: $e');
-      } finally {
-        if (mounted) {
-          setState(() {
-            _isLoading = false;
-          });
-        }
-      }
+  IconData _getWeatherIconData(String iconCode) {
+    switch (iconCode) {
+      case '01d': return Icons.wb_sunny;
+      case '02d': case '03d': case '04d': return Icons.wb_cloudy;
+      case '09d': case '10d': return Icons.grain;
+      case '11d': return Icons.flash_on;
+      default: return Icons.wb_cloudy;
     }
+  }
 
-    Widget _getWeatherIcon(String iconCode) {
-      IconData iconData;
-      Color iconColor;
-      
-      switch (iconCode) {
-        case '01d':
-        case '01n':
-          iconData = Icons.wb_sunny;
-          iconColor = Colors.orange;
-          break;
-        case '02d':
-        case '02n':
-        case '03d':
-        case '03n':
-        case '04d':
-        case '04n':
-          iconData = Icons.cloud;
-          iconColor = Colors.grey;
-          break;
-        case '09d':
-        case '09n':
-        case '10d':
-        case '10n':
-          iconData = Icons.grain;
-          iconColor = Colors.blue;
-          break;
-        default:
-          iconData = Icons.wb_cloudy;
-          iconColor = Colors.blueGrey;
-      }
-
+  WeatherData _generateDemoWeatherData(LatLng location) {
+    final random = math.Random((location.latitude + location.longitude * 1000).toInt());
+    
+    final descriptions = ['Ensoleillé', 'Nuageux', 'Pluvieux', 'Orageux'];
+    final icons = ['01d', '02d', '10d', '11d'];
+    
+    int index = random.nextInt(descriptions.length);
+    
+    return WeatherData(
+      temperature: 18 + random.nextInt(15).toDouble(),
+      description: descriptions[index],
+      icon: icons[index],
+      windSpeed: 2 + random.nextInt(8).toDouble(),
+      humidity: 40 + random.nextInt(40),
+      visibility: 8 + random.nextInt(12).toDouble(),
+      location: location,
+    );
+  }
+Widget _buildDestinationInput() {
+    if (!_showDestinationSearch) {
+      // Petit icône quand la recherche est cachée
       return Container(
+        padding: EdgeInsets.all(8),
         decoration: BoxDecoration(
-          color: Colors.white,
-          shape: BoxShape.circle,
-          border: Border.all(color: iconColor, width: 2),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.2),
-              blurRadius: 4,
-              offset: Offset(0, 2),
-            ),
-          ],
+          color: Colors.black.withOpacity(0.7),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: Colors.grey[600]!, width: 1),
         ),
-        child: Icon(iconData, color: iconColor, size: 24),
-      );
-    }
-
-    void _showWeatherInfo(WeatherData weather) {
-      showDialog(
-        context: context,
-        builder: (BuildContext context) {
-          return AlertDialog(
-            title: Text('Météo'),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('🌡️ Température: ${weather.temperature.toStringAsFixed(1)}°C'),
-                Text('📝 Conditions: ${weather.description}'),
-                Text('💨 Vent: ${weather.windSpeed.toStringAsFixed(1)} m/s'),
-                Text('💧 Humidité: ${weather.humidity}%'),
-                Text('👁️ Visibilité: ${weather.visibility.toStringAsFixed(1)} km'),
-              ],
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: Text('Fermer'),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.location_on, color: Colors.blue, size: 16),
+            if (_destination.isNotEmpty) ...[
+              SizedBox(width: 4),
+              Text(
+                _destination.length > 8 ? '${_destination.substring(0, 8)}...' : _destination,
+                style: TextStyle(color: Colors.white, fontSize: 10),
               ),
             ],
-          );
-        },
-      );
-    }
-
-    void _showMessage(String message, {bool isSuccess = false}) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(message),
-            backgroundColor: isSuccess ? Colors.green : Colors.red,
-            duration: const Duration(seconds: 3),
-          ),
-        );
-      }
-    }
-
-    @override
-    Widget build(BuildContext context) {
-      return Scaffold(
-        appBar: AppBar(
-          title: const Text('WeatherRoute AI 🌦️🚘'),
-          backgroundColor: Colors.blue,
-          foregroundColor: Colors.white,
-          elevation: 2,
-        ),
-        body: Column(
-          children: [
-            // Interface de saisie
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.blue.shade50,
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.grey.withOpacity(0.3),
-                    spreadRadius: 1,
-                    blurRadius: 3,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
-              ),
-              child: Column(
-                children: [
-                  TextField(
-                    controller: _startController,
-                    decoration: InputDecoration(
-                      labelText: 'Point de départ',
-                      hintText: 'Ex: Casablanca, Rabat, Marrakech...',
-                      prefixIcon: const Icon(Icons.location_on, color: Colors.green),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                      filled: true,
-                      fillColor: Colors.white,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: _endController,
-                    decoration: InputDecoration(
-                      labelText: 'Destination',
-                      hintText: 'Ex: Fes, Agadir, Tanger...',
-                      prefixIcon: const Icon(Icons.flag, color: Colors.red),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                      filled: true,
-                      fillColor: Colors.white,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton.icon(
-                      onPressed: _isLoading ? null : _calculateRoute,
-                      icon: _isLoading
-                          ? const SizedBox(
-                              width: 20,
-                              height: 20,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                              ),
-                            )
-                          : const Icon(Icons.search, color: Colors.white),
-                      label: Text(
-                        _isLoading ? 'Analyse en cours...' : 'Analyser l\'itinéraire',
-                        style: const TextStyle(color: Colors.white),
-                      ),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.blue,
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-
-            // Carte OpenStreetMap avec flutter_map
-            Expanded(
-              flex: 3,
-              child: Container(
-                decoration: BoxDecoration(
-                  border: Border.all(color: Colors.grey.shade300),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                margin: const EdgeInsets.all(8),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
-                  child: FlutterMap(
-                    mapController: _mapController,
-                    options: MapOptions(
-                      initialCenter: _casablancaCenter,
-                      initialZoom: 8.0,
-                      minZoom: 5.0,
-                      maxZoom: 18.0,
-                      interactionOptions: InteractionOptions(
-                        flags: InteractiveFlag.all,
-                      ),
-                    ),
-                    children: [
-                      // Couche de tuiles OpenStreetMap
-                      TileLayer(
-                        urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                        userAgentPackageName: 'com.example.weatherroute',
-                        maxZoom: 19,
-                      ),
-                      
-                      // Couche des polylines (routes)
-                      PolylineLayer(
-                        polylines: _polylines,
-                      ),
-                      
-                      // Couche des marqueurs
-                      MarkerLayer(
-                        markers: _markers,
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-
-            // Recommandations IA
-            if (_recommendations.isNotEmpty)
-              Expanded(
-                flex: 1,
-                child: Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: Colors.grey.shade100,
-                    border: Border(top: BorderSide(color: Colors.grey.shade300)),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Recommandations IA 🤖',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.black87,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Expanded(
-                        child: ListView.builder(
-                          itemCount: _recommendations.length,
-                          itemBuilder: (context, index) {
-                            AIRecommendation rec = _recommendations[index];
-                            return Card(
-                              margin: const EdgeInsets.only(bottom: 8),
-                              elevation: 2,
-                              child: ListTile(
-                                leading: Icon(rec.icon, color: rec.color, size: 28),
-                                title: Text(
-                                  rec.message,
-                                  style: TextStyle(
-                                    fontSize: 14,
-                                    color: Colors.black87,
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                ),
-                                dense: true,
-                                tileColor: rec.color.withOpacity(0.05),
-                              ),
-                            );
-                          },
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
           ],
         ),
-
-        // Bouton d'actions flottant
-        floatingActionButton: _weatherData.isNotEmpty
-            ? FloatingActionButton.extended(
-                onPressed: () => _showWeatherDetails(context),
-                label: const Text('Détails météo'),
-                icon: const Icon(Icons.cloud),
-                backgroundColor: Colors.blue,
-                foregroundColor: Colors.white,
-              )
-            : FloatingActionButton(
-                onPressed: () {
-                  _mapController.move(_casablancaCenter, 10);
-                },
-                backgroundColor: Colors.blue,
-                foregroundColor: Colors.white,
-                child: const Icon(Icons.my_location),
-              ),
       );
     }
 
-    void _showWeatherDetails(BuildContext context) {
-      showModalBottomSheet(
-        context: context,
-        isScrollControlled: true,
-        shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-        ),
-        builder: (context) => Container(
-          height: MediaQuery.of(context).size.height * 0.6,
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+    // Barre de recherche complète
+    return Container(
+      margin: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      padding: EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.black.withOpacity(0.9),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey[700]!, width: 1),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Text(
-                    '🌤️ Conditions météo détaillées',
-                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-                  ),
-                  IconButton(
-                    onPressed: () => Navigator.pop(context),
-                    icon: const Icon(Icons.close),
-                  ),
-                ],
+              Text(
+                'Destination',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
-              const SizedBox(height: 16),
+              GestureDetector(
+                onTap: () {
+                  setState(() {
+                    _showDestinationSearch = false;
+                  });
+                },
+                child: Icon(Icons.close, color: Colors.grey[400], size: 20),
+              ),
+            ],
+          ),
+          SizedBox(height: 12),
+          Row(
+            children: [
               Expanded(
-                child: ListView.builder(
-                  itemCount: _weatherData.length,
-                  itemBuilder: (context, index) {
-                    WeatherData weather = _weatherData[index];
-                    return Card(
-                      margin: const EdgeInsets.only(bottom: 12),
-                      elevation: 3,
-                      child: Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Point ${index + 1} sur l\'itinéraire',
-                              style: const TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.blue,
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text('🌡️ Température: ${weather.temperature.toStringAsFixed(1)}°C'),
-                                    Text('📝 Conditions: ${weather.description}'),
-                                    Text('💨 Vent: ${weather.windSpeed.toStringAsFixed(1)} m/s'),
-                                  ],
-                                ),
-                                Column(
-                                  crossAxisAlignment: CrossAxisAlignment.end,
-                                  children: [
-                                    Text('💧 Humidité: ${weather.humidity}%'),
-                                    Text('👁️ Visibilité: ${weather.visibility.toStringAsFixed(1)} km'),
-                                  ],
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
-                      ),
-                    );
+                child: TextField(
+                  controller: _destinationController,
+                  style: TextStyle(color: Colors.white),
+                  decoration: InputDecoration(
+                    hintText: 'Entrez votre destination...',
+                    hintStyle: TextStyle(color: Colors.grey[400]),
+                    filled: true,
+                    fillColor: Colors.grey[800],
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: BorderSide.none,
+                    ),
+                    contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  ),
+                  onChanged: (value) {
+                    setState(() {
+                      _destination = value;
+                    });
                   },
                 ),
               ),
+              SizedBox(width: 12),
+              GestureDetector(
+                onTap: () {
+                  if (_destination.isNotEmpty) {
+                    _getRouteWeather();
+                    setState(() {
+                      _showDestinationSearch = false; // Cache la barre après recherche
+                    });
+                  }
+                },
+                child: Container(
+                  padding: EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.blue,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Icon(
+                    Icons.search,
+                    color: Colors.white,
+                    size: 24,
+                  ),
+                ),
+              ),
             ],
           ),
-        ),
-      );
-    }
-
-    @override
-    void dispose() {
-      _startController.dispose();
-      _endController.dispose();
-      super.dispose();
-    }
+          if (_showRouteWeather) ...[
+            SizedBox(height: 16),
+            Container(
+              padding: EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.grey[800]!.withOpacity(0.5),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.route, color: Colors.green, size: 20),
+                      SizedBox(width: 8),
+                      Text(
+                        'Météo sur la route',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                  SizedBox(height: 8),
+                  Text(
+                    'Vers: $_destination',
+                    style: TextStyle(color: Colors.grey[300], fontSize: 14),
+                  ),
+                  SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Icon(Icons.wb_sunny, color: Colors.orange, size: 16),
+                      SizedBox(width: 4),
+                      Text('Ensoleillé', style: TextStyle(color: Colors.white, fontSize: 12)),
+                      SizedBox(width: 16),
+                      Icon(Icons.thermostat, color: Colors.blue, size: 16),
+                      SizedBox(width: 4),
+                      Text('24°C', style: TextStyle(color: Colors.white, fontSize: 12)),
+                    ],
+                  ),
+                  SizedBox(height: 4),
+                  Row(
+                    children: [
+                      Icon(Icons.water_drop, color: Colors.blue, size: 16),
+                      SizedBox(width: 4),
+                      Text('Pas de pluie', style: TextStyle(color: Colors.white, fontSize: 12)),
+                      SizedBox(width: 16),
+                      Icon(Icons.visibility, color: Colors.green, size: 16),
+                      SizedBox(width: 4),
+                      Text('Excellente', style: TextStyle(color: Colors.white, fontSize: 12)),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
   }
+
+
+void _getRouteWeather() {
+  // Simulation de récupération de données météo pour la route
+  setState(() {
+    _showRouteWeather = true;
+  });
+  
+  // Ici vous pouvez ajouter l'appel API pour obtenir la vraie météo
+  // En attendant, on simule avec des données fixes
+}
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Color(0xFF1a1a1a),
+      body: SafeArea(
+        child: Stack(
+          children: [
+            // Carte en plein écran
+            _buildRadarMap(),
+            
+            // Header en overlay
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: _buildHeader(),
+            ),
+            
+            // Météo actuelle en overlay (en haut à droite)
+            Positioned(
+              top: 80,
+              left: 16,
+              child: _buildCurrentWeatherCompact(),
+            ),
+            
+            // Prévisions en overlay (en haut)
+           // Prévisions en overlay (en haut)
+Positioned(
+  top: 80,
+  right: 16,
+  child: _buildForecastCompact(),
+),
+
+// Widget de destination
+if (_showDestinationSearch)
+  Positioned(
+    top: 180,
+    left: 0,
+    right: 0,
+    child: _buildDestinationInput(),
+  ),
+  if (!_showDestinationSearch)
+  _buildDestinationInput(),
+            // Contrôles en bas
+            Positioned(
+              bottom: 0,
+              left: 0,
+              right: 0,
+              child: _buildBottomControls(),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHeader() {
+    return Container(
+      padding: EdgeInsets.all(16),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Radar Tutorial',
+                style: TextStyle(
+                  fontSize: 24,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                ),
+              ),
+              Text(
+                _selectedLocation,
+                style: TextStyle(
+                  fontSize: 14,
+                  color: Colors.grey[400],
+                ),
+              ),
+            ],
+          ),
+          Icon(
+            Icons.location_on,
+            color: Colors.grey[400],
+            size: 24,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCurrentWeather() {
+    return Container(
+      padding: EdgeInsets.symmetric(horizontal: 16),
+      child: Row(
+        children: [
+          // Température circulaire
+          Container(
+            width: 120,
+            height: 120,
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                SizedBox(
+                  width: 120,
+                  height: 120,
+                  child: CircularProgressIndicator(
+                    value: 0.7,
+                    strokeWidth: 6,
+                    backgroundColor: Colors.grey[800],
+                    valueColor: AlwaysStoppedAnimation<Color>(Colors.green),
+                  ),
+                ),
+                Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      '${_currentTemp.toInt()}°',
+                      style: TextStyle(
+                        fontSize: 36,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                    ),
+                    Text(
+                      'now',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey[400],
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          SizedBox(width: 20),
+          
+          // Infos température
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _buildTempInfo('30°', '4p', Colors.orange),
+              SizedBox(height: 8),
+              _buildTempInfo('22°', '2a', Colors.green),
+            ],
+          ),
+          
+          Spacer(),
+          
+          // Icône météo principale
+          Container(
+            padding: EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.blue.withOpacity(0.2),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(
+              Icons.wb_cloudy,
+              color: Colors.blue,
+              size: 32,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTempInfo(String temp, String time, Color color) {
+    return Container(
+      padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            temp,
+            style: TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.bold,
+              fontSize: 12,
+            ),
+          ),
+          SizedBox(width: 4),
+          Text(
+            time,
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 10,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCurrentWeatherCompact() {
+    return Container(
+      padding: EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.black.withOpacity(0.7),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Température principale
+          Row(
+            children: [
+              Container(
+                width: 80,
+                height: 80,
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    SizedBox(
+                      width: 80,
+                      height: 80,
+                      child: CircularProgressIndicator(
+                        value: 0.7,
+                        strokeWidth: 4,
+                        backgroundColor: Colors.grey[800],
+                        valueColor: AlwaysStoppedAnimation<Color>(Colors.green),
+                      ),
+                    ),
+                    Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          '${_currentTemp.toInt()}°',
+                          style: TextStyle(
+                            fontSize: 24,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                        ),
+                        Text(
+                          'now',
+                          style: TextStyle(
+                            fontSize: 8,
+                            color: Colors.grey[400],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              SizedBox(width: 12),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildTempInfo('86°', '4p', Colors.orange),
+                  SizedBox(height: 4),
+                  _buildTempInfo('64°', '4a', Colors.green),
+                ],
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildForecastCompact() {
+    return Container(
+      padding: EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.black.withOpacity(0.7),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Text(
+                'VEN',
+                style: TextStyle(
+                  color: Colors.grey[400],
+                  fontSize: 10,
+                ),
+              ),
+              SizedBox(width: 8),
+              Icon(
+                Icons.wb_cloudy,
+                color: Colors.blue,
+                size: 16,
+              ),
+              SizedBox(width: 8),
+              Text(
+                '50%',
+                style: TextStyle(
+                  color: Colors.blue,
+                  fontSize: 10,
+                ),
+              ),
+            ],
+          ),
+          SizedBox(height: 4),
+          Text(
+            '85° 69°',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 10,
+            ),
+          ),
+          SizedBox(height: 8),
+          Row(
+            children: [
+              Text(
+                'SAM',
+                style: TextStyle(
+                  color: Colors.grey[400],
+                  fontSize: 10,
+                ),
+              ),
+              SizedBox(width: 8),
+              Icon(
+                Icons.thunderstorm,
+                color: Colors.orange,
+                size: 16,
+              ),
+            ],
+          ),
+          SizedBox(height: 4),
+          Text(
+            '84° 68°',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 10,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildForecastDay(String day, IconData icon, String high, String low, String? rain, Color color) {
+    return Column(
+      children: [
+        Text(
+          day,
+          style: TextStyle(
+            color: Colors.grey[400],
+            fontSize: 12,
+          ),
+        ),
+        SizedBox(height: 8),
+        Icon(
+          icon,
+          color: color,
+          size: 24,
+        ),
+        SizedBox(height: 8),
+        if (rain != null) ...[
+          Text(
+            rain,
+            style: TextStyle(
+              color: Colors.blue,
+              fontSize: 12,
+            ),
+          ),
+          SizedBox(height: 4),
+        ],
+        Text(
+          '$high $low',
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 12,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildRadarMap() {
+    return Container(
+      decoration: BoxDecoration(
+        color: Color(0xFF2a2a2a),
+      ),
+      child: Stack(
+        children: [
+          // Carte OpenStreetMap en plein écran
+          FlutterMap(
+            mapController: _mapController,
+            options: MapOptions(
+              initialCenter: _casablancaCenter,
+              initialZoom: 6.0,
+              minZoom: 4.0,
+              maxZoom: 15.0,
+            ),
+            children: [
+              TileLayer(
+                urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                userAgentPackageName: 'com.example.weatherradar',
+                maxZoom: 19,
+              ),
+              PolylineLayer(polylines: _polylines),
+              MarkerLayer(markers: _weatherMarkers),
+            ],
+          ),
+          
+          // Overlay radar animé
+          Positioned.fill(
+            child: AnimatedBuilder(
+              animation: _radarAnimationController,
+              builder: (context, child) {
+                return CustomPaint(
+                  painter: RadarOverlayPainter(_radarAnimationController.value),
+                );
+              },
+            ),
+          ),
+          
+          // Info route en haut à droite
+          Positioned(
+            top: 200,
+            right: 16,
+            child: Container(
+              padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: Colors.black.withOpacity(0.8),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 8,
+                    height: 8,
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                  SizedBox(width: 8),
+                  Text(
+                    'Dry road @ 10:01 PM',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBottomControls() {
+    return Container(
+      padding: EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.black.withOpacity(0.8),
+        borderRadius: BorderRadius.only(
+          topLeft: Radius.circular(20),
+          topRight: Radius.circular(20),
+        ),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Slider intensité
+          Row(
+            children: [
+              Container(
+                padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.green,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(
+                  'LOW',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+              Expanded(
+                child: SliderTheme(
+                  data: SliderThemeData(
+                    trackHeight: 6,
+                    thumbShape: RoundSliderThumbShape(enabledThumbRadius: 10),
+                    overlayShape: RoundSliderOverlayShape(overlayRadius: 20),
+                  ),
+                  child: Slider(
+                    value: _timeSliderValue,
+                    onChanged: (value) {
+                      setState(() {
+                        _timeSliderValue = value;
+                      });
+                    },
+                    activeColor: Colors.green,
+                    inactiveColor: Colors.red,
+                  ),
+                ),
+              ),
+              Container(
+                padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.red,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(
+                  'HIGH',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          
+          SizedBox(height: 16),
+          
+          // Contrôles lecture
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(
+                '12:30 PM',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              SizedBox(width: 30),
+              GestureDetector(
+                onTap: () {
+                  setState(() {
+                    _isPlaying = !_isPlaying;
+                  });
+                  if (_isPlaying) {
+                    _radarAnimationController.repeat();
+                  } else {
+                    _radarAnimationController.stop();
+                  }
+                },
+                child: Container(
+                  width: 60,
+                  height: 60,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.3),
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.white.withOpacity(0.5), width: 2),
+                  ),
+                  child: Icon(
+                    _isPlaying ? Icons.pause : Icons.play_arrow,
+                    color: Colors.white,
+                    size: 30,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showWeatherDetails(WeatherData weather) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          backgroundColor: Color(0xFF2a2a2a),
+          title: Text(
+            'Détails Météo',
+            style: TextStyle(color: Colors.white),
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '🌡️ Température: ${weather.temperature.toStringAsFixed(1)}°C',
+                style: TextStyle(color: Colors.white),
+              ),
+              SizedBox(height: 8),
+              Text(
+                '📝 Conditions: ${weather.description}',
+                style: TextStyle(color: Colors.white),
+              ),
+              SizedBox(height: 8),
+              Text(
+                '💨 Vent: ${weather.windSpeed.toStringAsFixed(1)} m/s',
+                style: TextStyle(color: Colors.white),
+              ),
+              SizedBox(height: 8),
+              Text(
+                '💧 Humidité: ${weather.humidity}%',
+                style: TextStyle(color: Colors.white),
+              ),
+              SizedBox(height: 8),
+              Text(
+                '👁️ Visibilité: ${weather.visibility.toStringAsFixed(1)} km',
+                style: TextStyle(color: Colors.white),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: Text(
+                'Fermer',
+                style: TextStyle(color: Colors.blue),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  @override
+  void dispose() {
+     _destinationController.dispose();
+    _radarAnimationController.dispose();
+    _pulseAnimationController.dispose();
+    super.dispose();
+  }
+}
+
+class RadarOverlayPainter extends CustomPainter {
+  final double animationValue;
+
+  RadarOverlayPainter(this.animationValue);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint();
+    
+    // Zones météo animées
+    _drawWeatherZones(canvas, size, paint);
+    
+    // Lignes de front
+    _drawWeatherFronts(canvas, size, paint);
+  }
+
+  void _drawWeatherZones(Canvas canvas, Size size, Paint paint) {
+    // Zone verte (pluie légère)
+    paint.color = Colors.green.withOpacity(0.3 + animationValue * 0.2);
+    canvas.drawCircle(
+      Offset(size.width * 0.3, size.height * 0.6),
+      50 + (animationValue * 20),
+      paint,
+    );
+    
+    // Zone jaune (pluie modérée)
+    paint.color = Colors.yellow.withOpacity(0.4 + animationValue * 0.2);
+    canvas.drawCircle(
+      Offset(size.width * 0.7, size.height * 0.4),
+      30 + (animationValue * 15),
+      paint,
+    );
+    
+    // Zone rouge (orages)
+    paint.color = Colors.red.withOpacity(0.3 + animationValue * 0.3);
+    canvas.drawCircle(
+      Offset(size.width * 0.8, size.height * 0.7),
+      25 + (animationValue * 10),
+      paint,
+    );
+  }
+
+  void _drawWeatherFronts(Canvas canvas, Size size, Paint paint) {
+    paint.color = Colors.white.withOpacity(0.8);
+    paint.strokeWidth = 2;
+    paint.style = PaintingStyle.stroke;
+    
+    // Fixed: Use ui.Path instead of latlong2.Path
+    final path = ui.Path();
+    path.moveTo(size.width * 0.1, size.height * 0.8);
+    path.quadraticBezierTo(
+      size.width * 0.5,
+      size.height * 0.3,
+      size.width * 0.9,
+      size.height * 0.4,
+    );
+    
+    canvas.drawPath(path, paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) {
+    return true;
+  }
+}
