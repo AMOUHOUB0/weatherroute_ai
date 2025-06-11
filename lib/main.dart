@@ -4,231 +4,276 @@ import 'package:latlong2/latlong.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'dart:async';
-import 'dart:math' as math;
-import 'dart:ui' as ui;
 import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
+import 'dart:math' as math;
 
 void main() {
-  runApp(WeatherRadarApp());
+  runApp(WeatherRouteApp());
 }
 
-class WeatherRadarApp extends StatelessWidget {
+const openWeatherApiKey = 'a08c63daf8a569834c3a9b1c069a33a5';
+const openRouteServiceApiKey = '5b3ce3597851110001cf6248d4eaa58434564f419b9b483bdb39a982';
+
+class WeatherRouteApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Radar Tutorial',
+      title: 'Météo Route Maroc',
       theme: ThemeData.dark().copyWith(
-        scaffoldBackgroundColor: Color(0xFF1a1a1a),
-        primaryColor: Colors.green,
+        scaffoldBackgroundColor: Color(0xFF0a0a0a),
       ),
-      home: WeatherRadarScreen(),
+      home: WeatherRouteScreen(),
       debugShowCheckedModeBanner: false,
     );
   }
 }
 
-class WeatherData {
-  final double temperature;
-  final String description;
-  final String icon;
-  final double windSpeed;
-  final int humidity;
-  final double visibility;
+class RouteWeatherPoint {
   final LatLng location;
+  final String weatherCondition;
+  final double temperature;
+  final IconData weatherIcon;
+  final Color weatherColor;
+  final String cityName;
+  final double humidity;
+  final double windSpeed;
 
-  WeatherData({
-    required this.temperature,
-    required this.description,
-    required this.icon,
-    required this.windSpeed,
-    required this.humidity,
-    required this.visibility,
+  RouteWeatherPoint({
     required this.location,
+    required this.weatherCondition,
+    required this.temperature,
+    required this.weatherIcon,
+    required this.weatherColor,
+    required this.cityName,
+    required this.humidity,
+    required this.windSpeed,
   });
-
-  factory WeatherData.fromJson(Map<String, dynamic> json, LatLng location) {
-    return WeatherData(
-      temperature: json['main']['temp'].toDouble(),
-      description: json['weather'][0]['description'],
-      icon: json['weather'][0]['icon'],
-      windSpeed: json['wind']['speed'].toDouble(),
-      humidity: json['main']['humidity'],
-      visibility: json['visibility'].toDouble() / 1000,
-      location: location,
-    );
-  }
 }
 
-class WeatherRadarScreen extends StatefulWidget {
+class RouteSegment {
+  final LatLng startPoint;
+  final LatLng endPoint;
+  final double distance;
+  final double duration;
+  final String segmentName;
+  final RouteWeatherPoint startWeather;
+  final RouteWeatherPoint endWeather;
+
+  RouteSegment({
+    required this.startPoint,
+    required this.endPoint,
+    required this.distance,
+    required this.duration,
+    required this.segmentName,
+    required this.startWeather,
+    required this.endWeather,
+  });
+}
+
+class WeatherRouteScreen extends StatefulWidget {
   @override
-  _WeatherRadarScreenState createState() => _WeatherRadarScreenState();
+  _WeatherRouteScreenState createState() => _WeatherRouteScreenState();
 }
 
-class _WeatherRadarScreenState extends State<WeatherRadarScreen>
+class _WeatherRouteScreenState extends State<WeatherRouteScreen> 
     with TickerProviderStateMixin {
   final MapController _mapController = MapController();
-  late AnimationController _radarAnimationController;
-  late AnimationController _pulseAnimationController;
+  final TextEditingController _searchController = TextEditingController();
+  final Map<String, Map<String, dynamic>> _weatherCache = {};
 
+  late AnimationController _loadingController;
+  late AnimationController _pulseController;
+  LatLng? _currentLocation;
+  String _currentLocationName = "Recherche de localisation...";
+  List<Polyline> _routeLines = [];
   List<Marker> _weatherMarkers = [];
-  List<Polyline> _polylines = [];
-  List<WeatherData> _weatherData = [];
+  List<RouteSegment> _routeSegments = [];
 
-  double _timeSliderValue = 0.5;
-  bool _isPlaying = false;
-  String _selectedLocation = "Casablanca, MA";
-  double _currentTemp = 28.0;
-  String _roadCondition = "Route sèche à 22:01";
+  bool _isLocationLoading = true;
+  bool _isRouteCalculating = false;
+  bool _hasActiveRoute = false;
+  bool _showSearchBar = true;
 
-  // Variables pour la destination et route
-  String _destination = "";
-  bool _showRouteWeather = false;
-  List<WeatherData> _routeWeatherData = [];
-  final TextEditingController _destinationController = TextEditingController();
-  bool _showDestinationSearch = true;
-  static const LatLng _casablancaCenter = LatLng(33.5731, -7.5898);
-  
-  // Variables pour la route
-  List<LatLng> routeCoordinates = [];
-  bool _isCalculatingRoute = false;
   String _routeDistance = "";
   String _routeDuration = "";
-  LatLng? _currentLocation;
+  String _selectedDestination = "";
 
-  // Données de prévision
-  final List<Map<String, dynamic>> _forecastData = [
-    {
-      'day': 'VEN',
-      'icon': Icons.wb_cloudy,
-      'high': '25°',
-      'low': '19°',
-      'rain': '50%',
-      'color': Colors.blue
-    },
-    {
-      'day': 'SAM',
-      'icon': Icons.thunderstorm,
-      'high': '24°',
-      'low': '18°',
-      'rain': null,
-      'color': Colors.orange
-    },
-    {
-      'day': 'DIM',
-      'icon': Icons.thunderstorm,
-      'high': '26°',
-      'low': '20°',
-      'rain': null,
-      'color': Colors.orange
-    },
-  ];
+  final Map<String, LatLng> _moroccanCities = {
+    'Casablanca': LatLng(33.5731, -7.5898),
+    'Rabat': LatLng(34.0209, -6.8416),
+    'Marrakech': LatLng(31.6295, -7.9811),
+    'Fès': LatLng(34.0181, -5.0078),
+    'Tanger': LatLng(35.7595, -5.8340),
+    'Agadir': LatLng(30.4278, -9.5981),
+  };
 
   @override
   void initState() {
     super.initState();
-    _radarAnimationController = AnimationController(
-      duration: Duration(seconds: 3),
-      vsync: this,
-    );
-    _pulseAnimationController = AnimationController(
+    _loadingController = AnimationController(
       duration: Duration(seconds: 2),
       vsync: this,
     )..repeat();
+    
+    _pulseController = AnimationController(
+      duration: Duration(seconds: 1),
+      vsync: this,
+    )..repeat(reverse: true);
 
-    _initializeApp();
+    _initializeLocation();
   }
 
-  Future<void> _initializeApp() async {
-    await _getCurrentLocation();
-    _generateWeatherMarkers();
+  @override
+  void dispose() {
+    _loadingController.dispose();
+    _pulseController.dispose();
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  Future<Map<String, dynamic>> _fetchWeatherData(LatLng location) async {
+    final cacheKey = '${location.latitude},${location.longitude}';
+    
+    if (_weatherCache.containsKey(cacheKey)) {
+      return _weatherCache[cacheKey]!;
+    }
+
+    try {
+      final response = await http.get(
+        Uri.parse(
+          'https://api.openweathermap.org/data/2.5/weather?'
+          'lat=${location.latitude}&lon=${location.longitude}'
+          '&appid=$openWeatherApiKey&units=metric&lang=fr',
+        ),
+      ).timeout(Duration(seconds: 5));
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        final weatherData = {
+          'temperature': data['main']['temp'],
+          'condition': data['weather'][0]['description'],
+          'humidity': data['main']['humidity'].toDouble(),
+          'windSpeed': data['wind']['speed'].toDouble(),
+        };
+        _weatherCache[cacheKey] = weatherData;
+        return weatherData;
+      } else {
+        // Return default weather data if API fails
+        return {
+          'temperature': 20.0,
+          'condition': 'partiellement nuageux',
+          'humidity': 50.0,
+          'windSpeed': 10.0,
+        };
+      }
+    } catch (e) {
+      print('Error fetching weather data: $e');
+      // Return default weather data
+      return {
+        'temperature': 20.0,
+        'condition': 'partiellement nuageux',
+        'humidity': 50.0,
+        'windSpeed': 10.0,
+      };
+    }
+  }
+
+  Future<void> _initializeLocation() async {
+    try {
+      await _getCurrentLocation();
+      await _loadInitialWeatherData();
+    } catch (e) {
+      print('Erreur initialisation: $e');
+      setState(() {
+        _currentLocation = _moroccanCities['Casablanca'];
+        _currentLocationName = "Casablanca, Maroc";
+        _isLocationLoading = false;
+      });
+      await _loadInitialWeatherData();
+    }
   }
 
   Future<void> _getCurrentLocation() async {
     try {
       bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
       if (!serviceEnabled) {
-        setState(() {
-          _currentLocation = _casablancaCenter;
-        });
-        return;
+        throw Exception('Services de localisation désactivés');
       }
 
       LocationPermission permission = await Geolocator.checkPermission();
       if (permission == LocationPermission.denied) {
         permission = await Geolocator.requestPermission();
+        if (permission == LocationPermission.denied) {
+          throw Exception('Permission de localisation refusée');
+        }
       }
 
       if (permission == LocationPermission.deniedForever) {
-        setState(() {
-          _currentLocation = _casablancaCenter;
-        });
-        return;
+        throw Exception('Permission de localisation refusée définitivement');
       }
 
       Position position = await Geolocator.getCurrentPosition(
         desiredAccuracy: LocationAccuracy.high,
       );
 
-      setState(() {
-        _currentLocation = LatLng(position.latitude, position.longitude);
-      });
+      LatLng newLocation = LatLng(position.latitude, position.longitude);
 
       List<Placemark> placemarks = await placemarkFromCoordinates(
         position.latitude,
         position.longitude,
       );
 
-      if (placemarks.isNotEmpty && mounted) {
-        Placemark place = placemarks[0];
-        setState(() {
-          _selectedLocation = "${place.locality ?? 'Position actuelle'}, ${place.country ?? 'MA'}";
-        });
+      String locationName = "Position actuelle";
+      if (placemarks.isNotEmpty) {
+        locationName = "${placemarks[0].locality ?? 'Position actuelle'}, Maroc";
       }
+
+      setState(() {
+        _currentLocation = newLocation;
+        _currentLocationName = locationName;
+        _isLocationLoading = false;
+      });
+
+      _mapController.move(_currentLocation!, 12.0);
     } catch (e) {
       print('Erreur géolocalisation: $e');
       setState(() {
-        _currentLocation = _casablancaCenter;
+        _currentLocation = _moroccanCities['Casablanca'];
+        _currentLocationName = "Casablanca, Maroc";
+        _isLocationLoading = false;
       });
     }
   }
 
-  void _generateWeatherMarkers() {
-    final List<LatLng> weatherPoints = [
-      LatLng(33.5731, -7.5898), // Casablanca
-      LatLng(34.0209, -6.8416), // Rabat
-      LatLng(31.6295, -7.9811), // Marrakech
-      LatLng(34.0181, -5.0078), // Fès
-      LatLng(35.7595, -5.8340), // Tanger
-      LatLng(30.4278, -9.5981), // Agadir
-    ];
-
+  Future<void> _loadInitialWeatherData() async {
     List<Marker> markers = [];
     
-    for (int i = 0; i < weatherPoints.length; i++) {
-      LatLng point = weatherPoints[i];
-      WeatherData weather = _generateDemoWeatherData(point);
-      _weatherData.add(weather);
-
-      markers.add(
-        Marker(
-          point: point,
-          width: 60,
-          height: 60,
-          child: GestureDetector(
-            onTap: () => _showWeatherDetails(weather),
-            child: AnimatedBuilder(
-              animation: _pulseAnimationController,
-              builder: (context, child) {
-                return Transform.scale(
-                  scale: 1.0 + (_pulseAnimationController.value * 0.2),
-                  child: _buildWeatherMarker(weather),
-                );
-              },
-            ),
+    for (var cityEntry in _moroccanCities.entries) {
+      try {
+        final weather = await _fetchWeatherData(cityEntry.value);
+        final point = RouteWeatherPoint(
+          location: cityEntry.value,
+          weatherCondition: weather['condition'],
+          temperature: weather['temperature'],
+          weatherIcon: _getWeatherIcon(weather['condition']),
+          weatherColor: _getWeatherColor(weather['condition']),
+          cityName: cityEntry.key,
+          humidity: weather['humidity'],
+          windSpeed: weather['windSpeed'],
+        );
+        
+        markers.add(
+          Marker(
+            point: cityEntry.value,
+            width: 80,
+            height: 80,
+            child: _buildWeatherMarker(point),
           ),
-        ),
-      );
+        );
+      } catch (e) {
+        print('Erreur chargement météo pour ${cityEntry.key}: $e');
+      }
     }
 
     setState(() {
@@ -236,1005 +281,822 @@ class _WeatherRadarScreenState extends State<WeatherRadarScreen>
     });
   }
 
-  Widget _buildWeatherMarker(WeatherData weather) {
-    Color markerColor = _getWeatherColor(weather.description);
-    
-    return Container(
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        gradient: RadialGradient(
-          colors: [
-            markerColor.withOpacity(0.8),
-            markerColor.withOpacity(0.3),
-            Colors.transparent,
-          ],
-        ),
-      ),
-      child: Center(
-        child: Container(
-          width: 20,
-          height: 20,
-          decoration: BoxDecoration(
-            color: markerColor,
-            shape: BoxShape.circle,
-            border: Border.all(color: Colors.white, width: 2),
-            boxShadow: [
-              BoxShadow(
-                color: markerColor.withOpacity(0.5),
-                blurRadius: 8,
-                spreadRadius: 2,
-              ),
+  IconData _getWeatherIcon(String condition) {
+    if (condition.contains('nuageux')) return Icons.cloud;
+    if (condition.contains('pluie')) return Icons.water_drop;
+    if (condition.contains('orage')) return Icons.thunderstorm;
+    if (condition.contains('neige')) return Icons.ac_unit;
+    if (condition.contains('soleil') || condition.contains('dégagé')) {
+      return Icons.wb_sunny;
+    }
+    return Icons.cloud;
+  }
+
+  Color _getWeatherColor(String condition) {
+    if (condition.contains('nuageux')) return Colors.blueGrey;
+    if (condition.contains('pluie')) return Colors.blue;
+    if (condition.contains('orage')) return Colors.deepPurple;
+    if (condition.contains('neige')) return Colors.lightBlue;
+    if (condition.contains('soleil') || condition.contains('dégagé')) {
+      return Colors.orange;
+    }
+    return Colors.grey;
+  }
+
+  Widget _buildWeatherMarker(RouteWeatherPoint point) {
+    return GestureDetector(
+      onTap: () => _showWeatherDetails(point),
+      child: Container(
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          gradient: RadialGradient(
+            colors: [
+              point.weatherColor.withOpacity(0.8),
+              point.weatherColor.withOpacity(0.4),
+              point.weatherColor.withOpacity(0.1),
             ],
           ),
-          child: Icon(
-            _getWeatherIconData(weather.icon),
-            color: Colors.white,
-            size: 12,
-          ),
         ),
-      ),
-    );
-  }
-
-  Color _getWeatherColor(String description) {
-    if (description.toLowerCase().contains('pluie')) return Colors.blue;
-    if (description.toLowerCase().contains('orage')) return Colors.red;
-    if (description.toLowerCase().contains('nuage')) return Colors.grey;
-    return Colors.green;
-  }
-
-  IconData _getWeatherIconData(String iconCode) {
-    switch (iconCode) {
-      case '01d': return Icons.wb_sunny;
-      case '02d': case '03d': case '04d': return Icons.wb_cloudy;
-      case '09d': case '10d': return Icons.grain;
-      case '11d': return Icons.flash_on;
-      default: return Icons.wb_cloudy;
-    }
-  }
-
-  WeatherData _generateDemoWeatherData(LatLng location) {
-    final random = math.Random((location.latitude + location.longitude * 1000).toInt());
-    
-    final descriptions = ['Ensoleillé', 'Nuageux', 'Pluvieux', 'Orageux'];
-    final icons = ['01d', '02d', '10d', '11d'];
-    
-    int index = random.nextInt(descriptions.length);
-    
-    return WeatherData(
-      temperature: 18 + random.nextInt(15).toDouble(),
-      description: descriptions[index],
-      icon: icons[index],
-      windSpeed: 2 + random.nextInt(8).toDouble(),
-      humidity: 40 + random.nextInt(40),
-      visibility: 8 + random.nextInt(12).toDouble(),
-      location: location,
-    );
-  }
-
-  Future<void> _getRouteWeather() async {
-    if (_destination.isEmpty) return;
-    
-    setState(() {
-      _isCalculatingRoute = true;
-      _showRouteWeather = false;
-    });
-
-    try {
-      // Géocodage de la destination
-      List<Location> locations = await locationFromAddress(_destination);
-      if (locations.isEmpty) {
-        print('Destination non trouvée');
-        return;
-      }
-      
-      LatLng destinationLatLng = LatLng(locations[0].latitude, locations[0].longitude);
-      
-      // Utiliser la position actuelle ou Casablanca par défaut
-      LatLng startLatLng = _currentLocation ?? _casablancaCenter;
-      
-      // Calculer la route
-      await _calculateRoute(startLatLng, destinationLatLng);
-      
-      // Obtenir la météo le long de la route
-      await _getWeatherAlongRoute();
-      
-      setState(() {
-        _showRouteWeather = true;
-      });
-      
-    } catch (e) {
-      print('Erreur lors du calcul de la route: $e');
-      // Créer une route de démonstration si le géocodage échoue
-      LatLng demoDestination = LatLng(34.0209, -6.8416); // Rabat
-      LatLng startLatLng = _currentLocation ?? _casablancaCenter;
-      await _calculateRoute(startLatLng, demoDestination);
-      await _getWeatherAlongRoute();
-      setState(() {
-        _showRouteWeather = true;
-      });
-    } finally {
-      setState(() {
-        _isCalculatingRoute = false;
-      });
-    }
-  }
-
-  Future<void> _calculateRoute(LatLng start, LatLng destination) async {
-    try {
-      // Créer une route simple (ligne avec quelques points intermédiaires)
-      List<LatLng> route = _generateRoutePoints(start, destination);
-      
-      // Calculer distance et durée approximatives
-      double distance = _calculateDistance(start, destination);
-      _routeDistance = "${distance.toStringAsFixed(0)} km";
-      _routeDuration = "${(distance / 80 * 60).toStringAsFixed(0)} min"; // ~80 km/h moyenne
-      
-      // Créer la polyline - FIXED: Removed polylineId parameter
-    Polyline routePolyline = Polyline(
-  points: route,
-  color: Colors.blue,
-  strokeWidth: 4.0,
-  // Supprimez isDotted si ça ne marche pas
-);
-      setState(() {
-        routeCoordinates = route;
-        _polylines = [routePolyline];
-      });
-      
-      // Centrer la carte sur la route
-      _fitMapToRoute(start, destination);
-      
-    } catch (e) {
-      print('Erreur calcul route: $e');
-    }
-  }
-
-  void _fitMapToRoute(LatLng start, LatLng destination) {
-    double minLat = math.min(start.latitude, destination.latitude) - 0.05;
-    double maxLat = math.max(start.latitude, destination.latitude) + 0.05;
-    double minLng = math.min(start.longitude, destination.longitude) - 0.05;
-    double maxLng = math.max(start.longitude, destination.longitude) + 0.05;
-    
-    LatLng southwest = LatLng(minLat, minLng);
-    LatLng northeast = LatLng(maxLat, maxLng);
-    
-    _mapController.fitCamera(
-      CameraFit.bounds(
-        bounds: LatLngBounds(southwest, northeast),
-        padding: EdgeInsets.all(50),
-      ),
-    );
-  }
-
-  List<LatLng> _generateRoutePoints(LatLng start, LatLng destination) {
-    List<LatLng> points = [];
-    int numPoints = 10; // Nombre de points intermédiaires
-    
-    for (int i = 0; i <= numPoints; i++) {
-      double ratio = i / numPoints;
-      double lat = start.latitude + (destination.latitude - start.latitude) * ratio;
-      double lng = start.longitude + (destination.longitude - start.longitude) * ratio;
-      points.add(LatLng(lat, lng));
-    }
-    
-    return points;
-  }
-
-  double _calculateDistance(LatLng start, LatLng end) {
-    return Geolocator.distanceBetween(
-      start.latitude, start.longitude,
-      end.latitude, end.longitude,
-    ) / 1000; // Convertir en km
-  }
-
-  Future<void> _getWeatherAlongRoute() async {
-    if (routeCoordinates.isEmpty) return;
-    
-    _routeWeatherData.clear();
-    
-    // Prendre quelques points le long de la route pour la météo
-    List<LatLng> weatherCheckPoints = [];
-    int step = math.max(1, (routeCoordinates.length / 3).round()); // 3 points de contrôle
-    
-    for (int i = 0; i < routeCoordinates.length; i += step) {
-      if (i < routeCoordinates.length) {
-        weatherCheckPoints.add(routeCoordinates[i]);
-      }
-    }
-    
-    // Ajouter le point de destination s'il n'y est pas
-    if (weatherCheckPoints.isNotEmpty && weatherCheckPoints.last != routeCoordinates.last) {
-      weatherCheckPoints.add(routeCoordinates.last);
-    }
-    
-    // Générer des données météo pour chaque point
-    for (LatLng point in weatherCheckPoints) {
-      WeatherData weather = _generateDemoWeatherData(point);
-      _routeWeatherData.add(weather);
-    }
-  }
-
-  Widget _buildDestinationInput() {
-    if (!_showDestinationSearch) {
-      // Petit icône quand la recherche est cachée
-      return Positioned(
-        top: 180,
-        left: 16,
-        child: GestureDetector(
-          onTap: () {
-            setState(() {
-              _showDestinationSearch = true;
-            });
-          },
+        child: Center(
           child: Container(
-            padding: EdgeInsets.all(8),
+            width: 40,
+            height: 40,
             decoration: BoxDecoration(
-              color: Colors.black.withOpacity(0.7),
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: Colors.grey[600]!, width: 1),
+              color: point.weatherColor,
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.white, width: 2),
             ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(Icons.location_on, color: Colors.blue, size: 16),
-                if (_destination.isNotEmpty) ...[
-                  SizedBox(width: 4),
-                  Text(
-                    _destination.length > 8 ? '${_destination.substring(0, 8)}...' : _destination,
-                    style: TextStyle(color: Colors.white, fontSize: 10),
+                Icon(point.weatherIcon, color: Colors.white, size: 16),
+                Text(
+                  '${point.temperature.toInt()}°',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 8,
+                    fontWeight: FontWeight.bold,
                   ),
-                ],
+                ),
               ],
             ),
           ),
         ),
-      );
-    }
-
-    // Barre de recherche complète
-    return Container(
-      margin: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      padding: EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.black.withOpacity(0.9),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey[700]!, width: 1),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                'Destination',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              GestureDetector(
-                onTap: () {
-                  setState(() {
-                    _showDestinationSearch = false;
-                  });
-                },
-                child: Icon(Icons.close, color: Colors.grey[400], size: 20),
-              ),
+    );
+  }
+
+  Widget _buildRouteWeatherMarker(RouteWeatherPoint point) {
+    return GestureDetector(
+      onTap: () => _showWeatherDetails(point),
+      child: Container(
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          gradient: RadialGradient(
+            colors: [
+              point.weatherColor.withOpacity(0.8),
+              point.weatherColor.withOpacity(0.4),
+              point.weatherColor.withOpacity(0.1),
             ],
           ),
-          SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: _destinationController,
-                  style: TextStyle(color: Colors.white),
-                  decoration: InputDecoration(
-                    hintText: 'Entrez votre destination...',
-                    hintStyle: TextStyle(color: Colors.grey[400]),
-                    filled: true,
-                    fillColor: Colors.grey[800],
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                      borderSide: BorderSide.none,
-                    ),
-                    contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        ),
+        child: Center(
+          child: Container(
+            width: 30,
+            height: 30,
+            decoration: BoxDecoration(
+              color: point.weatherColor,
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.white, width: 2),
+            ),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(point.weatherIcon, color: Colors.white, size: 12),
+                Text(
+                  '${point.temperature.toInt()}°',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 6,
+                    fontWeight: FontWeight.bold,
                   ),
-                  onChanged: (value) {
-                    setState(() {
-                      _destination = value;
-                    });
-                  },
                 ),
-              ),
-              SizedBox(width: 12),
-              GestureDetector(
-                onTap: () {
-                  if (_destination.isNotEmpty) {
-                    _getRouteWeather();
-                    setState(() {
-                      _showDestinationSearch = false; // Cache la barre après recherche
-                    });
-                  }
-                },
-                child: Container(
-                  padding: EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: _isCalculatingRoute ? Colors.grey : Colors.blue,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: _isCalculatingRoute
-                      ? SizedBox(
-                          width: 24,
-                          height: 24,
-                          child: CircularProgressIndicator(
-                            color: Colors.white,
-                            strokeWidth: 2,
-                          ),
-                        )
-                      : Icon(
-                          Icons.search,
-                          color: Colors.white,
-                          size: 24,
-                        ),
-                ),
-              ),
-            ],
+              ],
+            ),
           ),
-          if (_showRouteWeather) ...[
-            SizedBox(height: 16),
-            Container(
-              padding: EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.grey[800]!.withOpacity(0.5),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
+        ),
+      ),
+    );
+  }
+
+  void _showWeatherDetails(RouteWeatherPoint point) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Color(0xFF1a1a1a),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => Container(
+        padding: EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              children: [
+                Icon(point.weatherIcon, color: point.weatherColor, size: 40),
+                SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Icon(Icons.route, color: Colors.green, size: 20),
-                      SizedBox(width: 8),
                       Text(
-                        'Route vers $_destination',
+                        point.cityName,
                         style: TextStyle(
                           color: Colors.white,
+                          fontSize: 20,
                           fontWeight: FontWeight.bold,
                         ),
                       ),
+                      Text(
+                        point.weatherCondition,
+                        style: TextStyle(color: Colors.grey[400]),
+                      ),
                     ],
+                  ),
+                ),
+                Text(
+                  '${point.temperature.toInt()}°C',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 32,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+            SizedBox(height: 20),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: [
+                Column(
+                  children: [
+                    Icon(Icons.water_drop, color: Colors.blue),
+                    Text('${point.humidity.toInt()}%', style: TextStyle(color: Colors.white)),
+                    Text('Humidité', style: TextStyle(color: Colors.grey[400], fontSize: 12)),
+                  ],
+                ),
+                Column(
+                  children: [
+                    Icon(Icons.air, color: Colors.green),
+                    Text('${point.windSpeed.toInt()} km/h', style: TextStyle(color: Colors.white)),
+                    Text('Vent', style: TextStyle(color: Colors.grey[400], fontSize: 12)),
+                  ],
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<List<LatLng>> _fetchRoutePoints(LatLng start, LatLng end) async {
+    try {
+      final response = await http.get(
+        Uri.parse(
+          'https://api.openrouteservice.org/v2/directions/driving-car?'
+          'api_key=$openRouteServiceApiKey'
+          '&start=${start.longitude},${start.latitude}'
+          '&end=${end.longitude},${end.latitude}',
+        ),
+        headers: {'Accept': 'application/json, application/geo+json'},
+      ).timeout(Duration(seconds: 10));
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        final coordinates = data['features'][0]['geometry']['coordinates'];
+        return coordinates.map<LatLng>((coord) => LatLng(coord[1], coord[0])).toList();
+      } else {
+        throw Exception('Échec du chargement de la route: ${response.statusCode}');
+      }
+    } catch (e) {
+      print('Erreur fetchRoutePoints: $e');
+      throw Exception('Impossible de récupérer les points de la route');
+    }
+  }
+
+  Future<void> _calculateRouteSegments(List<LatLng> routePoints) async {
+    _routeSegments.clear();
+    
+    // Sample points along the route (every 10 points)
+    final step = math.max(1, routePoints.length ~/ 10);
+    
+    for (int i = 0; i < routePoints.length - 1; i += step) {
+      // Add delay between API calls
+      if (i > 0) await Future.delayed(Duration(milliseconds: 200));
+      
+      LatLng start = routePoints[i];
+      LatLng end = routePoints[math.min(i + step, routePoints.length - 1)];
+
+      double distance = Geolocator.distanceBetween(
+        start.latitude, start.longitude,
+        end.latitude, end.longitude,
+      ) / 1000;
+
+      String segmentName;
+      if (i == 0) {
+        segmentName = "Départ";
+      } else if (i >= routePoints.length - step) {
+        segmentName = "Arrivée";
+      } else {
+        segmentName = "Étape ${i ~/ step + 1}";
+      }
+
+      try {
+        final startWeatherData = await _fetchWeatherData(start);
+        final endWeatherData = await _fetchWeatherData(end);
+
+        RouteWeatherPoint startWeather = RouteWeatherPoint(
+          location: start,
+          weatherCondition: startWeatherData['condition'],
+          temperature: startWeatherData['temperature'],
+          weatherIcon: _getWeatherIcon(startWeatherData['condition']),
+          weatherColor: _getWeatherColor(startWeatherData['condition']),
+          cityName: i == 0 ? "Départ" : "Point ${i ~/ step + 1}",
+          humidity: startWeatherData['humidity'],
+          windSpeed: startWeatherData['windSpeed'],
+        );
+
+        RouteWeatherPoint endWeather = RouteWeatherPoint(
+          location: end,
+          weatherCondition: endWeatherData['condition'],
+          temperature: endWeatherData['temperature'],
+          weatherIcon: _getWeatherIcon(endWeatherData['condition']),
+          weatherColor: _getWeatherColor(endWeatherData['condition']),
+          cityName: i >= routePoints.length - step ? "Arrivée" : "Point ${i ~/ step + 2}",
+          humidity: endWeatherData['humidity'],
+          windSpeed: endWeatherData['windSpeed'],
+        );
+
+        _routeSegments.add(RouteSegment(
+          startPoint: start,
+          endPoint: end,
+          distance: distance,
+          duration: distance / 80,
+          segmentName: segmentName,
+          startWeather: startWeather,
+          endWeather: endWeather,
+        ));
+      } catch (e) {
+        print('Error in segment $i: $e');
+        // Add segment with default weather data
+        _routeSegments.add(RouteSegment(
+          startPoint: start,
+          endPoint: end,
+          distance: distance,
+          duration: distance / 80,
+          segmentName: segmentName,
+          startWeather: RouteWeatherPoint(
+            location: start,
+            weatherCondition: 'partiellement nuageux',
+            temperature: 20.0,
+            weatherIcon: Icons.cloud,
+            weatherColor: Colors.blueGrey,
+            cityName: i == 0 ? "Départ" : "Point ${i ~/ step + 1}",
+            humidity: 50.0,
+            windSpeed: 10.0,
+          ),
+          endWeather: RouteWeatherPoint(
+            location: end,
+            weatherCondition: 'partiellement nuageux',
+            temperature: 20.0,
+            weatherIcon: Icons.cloud,
+            weatherColor: Colors.blueGrey,
+            cityName: i >= routePoints.length - step ? "Arrivée" : "Point ${i ~/ step + 2}",
+            humidity: 50.0,
+            windSpeed: 10.0,
+          ),
+        ));
+      }
+    }
+  }
+
+  Future<void> _calculateRouteWeather(String destination) async {
+    if (_currentLocation == null) return;
+
+    setState(() {
+      _isRouteCalculating = true;
+      _selectedDestination = destination;
+      _showSearchBar = false;
+    });
+
+    try {
+      LatLng? destinationCoords = _moroccanCities[destination];
+
+      if (destinationCoords == null) {
+        List<Location> locations = await locationFromAddress(
+          "$destination, Maroc",
+        );
+        if (locations.isNotEmpty) {
+          destinationCoords = LatLng(
+            locations[0].latitude,
+            locations[0].longitude,
+          );
+        } else {
+          throw Exception('Destination non trouvée');
+        }
+      }
+
+      final routePoints = await _fetchRoutePoints(
+        _currentLocation!,
+        destinationCoords,
+      );
+
+      await _calculateRouteSegments(routePoints);
+
+      double totalDistance = 0;
+      for (var segment in _routeSegments) {
+        totalDistance += segment.distance;
+      }
+
+      _routeDistance = "${totalDistance.toStringAsFixed(0)} km";
+      _routeDuration = "${(totalDistance / 80 * 60).toStringAsFixed(0)} min";
+
+      List<Marker> routeMarkers = [];
+      for (var segment in _routeSegments) {
+        routeMarkers.add(
+          Marker(
+            point: segment.startPoint,
+            width: 60,
+            height: 60,
+            child: _buildRouteWeatherMarker(segment.startWeather),
+          ),
+        );
+
+        if (segment == _routeSegments.last) {
+          routeMarkers.add(
+            Marker(
+              point: segment.endPoint,
+              width: 60,
+              height: 60,
+              child: _buildRouteWeatherMarker(segment.endWeather),
+            ),
+          );
+        }
+      }
+
+      Polyline routeLine = Polyline(
+        points: routePoints,
+        color: Color(0xFF00C853),
+        strokeWidth: 4.0,
+      );
+
+      setState(() {
+        _routeLines = [routeLine];
+        _weatherMarkers = routeMarkers;
+        _hasActiveRoute = true;
+      });
+
+      _fitMapToRoute(_currentLocation!, destinationCoords);
+    } catch (e) {
+      print('Erreur calcul route: $e');
+      _showErrorSnackBar('Impossible de calculer la route vers $destination');
+    } finally {
+      setState(() {
+        _isRouteCalculating = false;
+      });
+    }
+  }
+
+  void _fitMapToRoute(LatLng start, LatLng end) {
+    double minLat = math.min(start.latitude, end.latitude);
+    double maxLat = math.max(start.latitude, end.latitude);
+    double minLng = math.min(start.longitude, end.longitude);
+    double maxLng = math.max(start.longitude, end.longitude);
+
+    LatLng center = LatLng(
+      (minLat + maxLat) / 2,
+      (minLng + maxLng) / 2,
+    );
+
+    double zoom = _calculateZoomLevel(minLat, maxLat, minLng, maxLng);
+    _mapController.move(center, zoom);
+  }
+
+  double _calculateZoomLevel(double minLat, double maxLat, double minLng, double maxLng) {
+    double latDiff = maxLat - minLat;
+    double lngDiff = maxLng - minLng;
+    double maxDiff = math.max(latDiff, lngDiff);
+    
+    if (maxDiff > 5) return 6.0;
+    if (maxDiff > 2) return 8.0;
+    if (maxDiff > 1) return 9.0;
+    if (maxDiff > 0.5) return 10.0;
+    return 11.0;
+  }
+
+  void _showErrorSnackBar(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: Colors.red[700],
+        behavior: SnackBarBehavior.floating,
+        margin: EdgeInsets.all(16),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(10),
+        ),
+      ),
+    );
+  }
+
+  void _clearRoute() {
+    setState(() {
+      _routeLines.clear();
+      _routeSegments.clear();
+      _hasActiveRoute = false;
+      _showSearchBar = true;
+      _searchController.clear();
+    });
+    
+    // Recharger les marqueurs météo des villes
+    _loadInitialWeatherData();
+    
+    // Revenir à la vue initiale
+    if (_currentLocation != null) {
+      _mapController.move(_currentLocation!, 6.0);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: Stack(
+        children: [
+          _buildMap(),
+          _buildHeader(),
+          
+          if (_showSearchBar) _buildSearchBar(),
+          if (_hasActiveRoute) ...[
+            _buildRouteInfo(),
+            _buildRouteSegmentsList(),
+            _buildChangeDestinationButton(),
+          ],
+          
+          _buildLocationButton(),
+          if (_hasActiveRoute) _buildResetButton(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMap() {
+    return FlutterMap(
+      mapController: _mapController,
+      options: MapOptions(
+        initialCenter: _currentLocation ?? _moroccanCities['Casablanca']!,
+        initialZoom: _hasActiveRoute ? 8.0 : 6.0,
+        minZoom: 5.0,
+        maxZoom: 16.0,
+      ),
+      children: [
+        TileLayer(
+          urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+          userAgentPackageName: 'com.example.weatherroute',
+        ),
+        if (_routeLines.isNotEmpty) PolylineLayer(polylines: _routeLines),
+        if (_weatherMarkers.isNotEmpty) MarkerLayer(markers: _weatherMarkers),
+        if (_currentLocation != null)
+          MarkerLayer(
+            markers: [
+              Marker(
+                point: _currentLocation!,
+                width: 40,
+                height: 40,
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Color(0xFF00C853),
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.white, width: 3),
+                  ),
+                  child: Icon(Icons.my_location, color: Colors.white, size: 20),
+                ),
+              ),
+            ],
+          ),
+      ],
+    );
+  }
+
+  Widget _buildHeader() {
+    return Positioned(
+      top: 0,
+      left: 0,
+      right: 0,
+      child: SafeArea(
+        child: Container(
+          padding: EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [Colors.black.withOpacity(0.8), Colors.transparent],
+            ),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Météo Route',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 24,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    if (_isLocationLoading)
+                      Row(
+                        children: [
+                          SizedBox(
+                            width: 12,
+                            height: 12,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              valueColor: AlwaysStoppedAnimation<Color>(
+                                Color(0xFF00C853),
+                              ),
+                            ),
+                          ),
+                          SizedBox(width: 8),
+                          Text(
+                            'Localisation...',
+                            style: TextStyle(
+                              color: Colors.grey[400],
+                              fontSize: 14,
+                            ),
+                          ),
+                        ],
+                      )
+                    else
+                      Text(
+                        _currentLocationName,
+                        style: TextStyle(color: Colors.grey[400], fontSize: 14),
+                      ),
+                  ],
+                ),
+              ),
+              Icon(Icons.location_on, color: Color(0xFF00C853), size: 28),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSearchBar() {
+    return Positioned(
+      top: 120,
+      left: 16,
+      right: 16,
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.2),
+              blurRadius: 10,
+              offset: Offset(0, 2),
+            ),
+          ],
+        ),
+        child: TextField(
+          controller: _searchController,
+          decoration: InputDecoration(
+            hintText: 'Rechercher une destination...',
+            prefixIcon: Icon(Icons.search, color: Colors.grey[600]),
+            suffixIcon: _isRouteCalculating
+                ? Padding(
+                    padding: EdgeInsets.all(12),
+                    child: SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        valueColor: AlwaysStoppedAnimation<Color>(
+                          Color(0xFF00C853),
+                        ),
+                      ),
+                    ),
+                  )
+                : IconButton(
+                    icon: Icon(Icons.arrow_forward, color: Color(0xFF00C853)),
+                    onPressed: () {
+                      if (_searchController.text.isNotEmpty) {
+                        _calculateRouteWeather(_searchController.text);
+                      }
+                    },
+                  ),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide.none,
+            ),
+            filled: true,
+            fillColor: Colors.white,
+            contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          ),
+          onSubmitted: (value) {
+            if (value.isNotEmpty) {
+              _calculateRouteWeather(value);
+            }
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRouteInfo() {
+    return Positioned(
+      top: 190,
+      left: 16,
+      right: 16,
+      child: Container(
+        padding: EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Color(0xFF1a1a1a).withOpacity(0.95),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Color(0xFF00C853), width: 1),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.route, color: Color(0xFF00C853), size: 20),
+                SizedBox(width: 8),
+                Text(
+                  'Route vers $_selectedDestination',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                  ),
+                ),
+              ],
+            ),
+            SizedBox(height: 8),
+            Row(
+              children: [
+                Icon(Icons.straighten, color: Colors.blue, size: 16),
+                SizedBox(width: 4),
+                Text(_routeDistance, style: TextStyle(color: Colors.white)),
+                SizedBox(width: 16),
+                Icon(Icons.access_time, color: Colors.orange, size: 16),
+                SizedBox(width: 4),
+                Text(_routeDuration, style: TextStyle(color: Colors.white)),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRouteSegmentsList() {
+    return Positioned(
+      bottom: 80,
+      left: 0,
+      right: 0,
+      child: Container(
+        height: 150,
+        child: ListView.builder(
+          scrollDirection: Axis.horizontal,
+          itemCount: _routeSegments.length,
+          itemBuilder: (context, index) {
+            final segment = _routeSegments[index];
+            return Container(
+              width: 200,
+              margin: EdgeInsets.symmetric(horizontal: 8),
+              decoration: BoxDecoration(
+                color: Color(0xFF1a1a1a).withOpacity(0.9),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Color(0xFF00C853), width: 1),
+              ),
+              padding: EdgeInsets.all(12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    segment.segmentName,
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                   SizedBox(height: 8),
                   Row(
                     children: [
                       Icon(Icons.straighten, color: Colors.blue, size: 16),
                       SizedBox(width: 4),
-                      Text(_routeDistance, style: TextStyle(color: Colors.white, fontSize: 12)),
-                      SizedBox(width: 16),
+                      Text(
+                        "${segment.distance.toStringAsFixed(1)} km",
+                        style: TextStyle(color: Colors.white),
+                      ),
+                      SizedBox(width: 8),
                       Icon(Icons.access_time, color: Colors.orange, size: 16),
                       SizedBox(width: 4),
-                      Text(_routeDuration, style: TextStyle(color: Colors.white, fontSize: 12)),
+                      Text(
+                        "${(segment.duration * 60).toStringAsFixed(0)} min",
+                        style: TextStyle(color: Colors.white),
+                      ),
                     ],
                   ),
-                  SizedBox(height: 12),
-                  Text(
-                    'Météo sur la route:',
-                    style: TextStyle(color: Colors.grey[300], fontSize: 14, fontWeight: FontWeight.bold),
-                  ),
                   SizedBox(height: 8),
-                  ...(_routeWeatherData.isNotEmpty 
-                    ? _routeWeatherData.map((weather) => Padding(
-                        padding: EdgeInsets.symmetric(vertical: 2),
-                        child: Row(
-                          children: [
-                            Icon(_getWeatherIconData(weather.icon), 
-                                 color: _getWeatherColor(weather.description), size: 16),
-                            SizedBox(width: 8),
-                            Text('${weather.temperature.toInt()}°C', 
-                                 style: TextStyle(color: Colors.white, fontSize: 12)),
-                            SizedBox(width: 8),
-                            Text(weather.description, 
-                                 style: TextStyle(color: Colors.grey[300], fontSize: 12)),
-                          ],
-                        ),
-                      )).toList()
-                    : [Text('Calcul en cours...', 
-                            style: TextStyle(color: Colors.grey[400], fontSize: 12))]),
-                ],
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Color(0xFF1a1a1a),
-      body: SafeArea(
-        child: Stack(
-          children: [
-            // Carte en plein écran
-            _buildRadarMap(),
-            
-            // Header en overlay
-            Positioned(
-              top: 0,
-              left: 0,
-              right: 0,
-              child: _buildHeader(),
-            ),
-            
-            // Météo actuelle en overlay (en haut à gauche)
-            Positioned(
-              top: 80,
-              left: 16,
-              child: _buildCurrentWeatherCompact(),
-            ),
-            
-            // Prévisions en overlay (en haut à droite)
-            Positioned(
-              top: 80,
-              right: 16,
-              child: _buildForecastCompact(),
-            ),
-
-            // Widget de destination
-            if (_showDestinationSearch)
-              Positioned(
-                top: 180,
-                left: 0,
-                right: 0,
-                child: _buildDestinationInput(),
-              )
-            else
-              _buildDestinationInput(),
-              
-            // Contrôles en bas
-            Positioned(
-              bottom: 0,
-              left: 0,
-              right: 0,
-              child: _buildBottomControls(),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildHeader() {
-    return Container(
-      padding: EdgeInsets.all(16),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Radar Tutorial',
-                style: TextStyle(
-                  fontSize: 24,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.white,
-                ),
-              ),
-              Text(
-                _selectedLocation,
-                style: TextStyle(
-                  fontSize: 14,
-                  color: Colors.grey[400],
-                ),
-              ),
-            ],
-          ),
-          Icon(
-            Icons.location_on,
-            color: Colors.grey[400],
-            size: 24,
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildTempInfo(String temp, String time, Color color) {
-    return Container(
-      padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: color,
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            temp,
-            style: TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.bold,
-              fontSize: 12,
-            ),
-          ),
-          SizedBox(width: 4),
-          Text(
-            time,
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 10,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildCurrentWeatherCompact() {
-    return Container(
-      padding: EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.black.withOpacity(0.7),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Température principale
-          Row(
-            children: [
-              Container(
-                width: 80,
-                height: 80,
-                child: Stack(
-                  alignment: Alignment.center,
-                  children: [
-                    SizedBox(
-                      width: 80,
-                      height: 80,
-                      child: CircularProgressIndicator(
-                        value: 0.7,
-                        strokeWidth: 4,
-                        backgroundColor: Colors.grey[800],
-                        valueColor: AlwaysStoppedAnimation<Color>(Colors.green),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Column(
+                        children: [
+                          Icon(segment.startWeather.weatherIcon, 
+                              color: segment.startWeather.weatherColor),
+                          Text(
+                            "${segment.startWeather.temperature.toInt()}°C",
+                            style: TextStyle(color: Colors.white),
+                          ),
+                        ],
                       ),
-                    ),
-                    Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text(
-                          '${_currentTemp.toInt()}°',
-                          style: TextStyle(
-                            fontSize: 24,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white,
+                      Icon(Icons.arrow_forward, color: Colors.grey),
+                      Column(
+                        children: [
+                          Icon(segment.endWeather.weatherIcon,
+                              color: segment.endWeather.weatherColor),
+                          Text(
+                            "${segment.endWeather.temperature.toInt()}°C",
+                            style: TextStyle(color: Colors.white),
                           ),
-                        ),
-                        Text(
-                          'now',
-                          style: TextStyle(
-                            fontSize: 8,
-                            color: Colors.grey[400],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-              SizedBox(width: 12),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _buildTempInfo('86°', '4p', Colors.orange),
-                  SizedBox(height: 4),
-                  _buildTempInfo('64°', '4a', Colors.green),
-                ],
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildForecastCompact() {
-    return Container(
-      padding: EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.black.withOpacity(0.7),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Column(
-        children: [
-          Row(
-            children: [
-              Text(
-                'VEN',
-                style: TextStyle(
-                  color: Colors.grey[400],
-                  fontSize: 10,
-                ),
-              ),
-              SizedBox(width: 8),
-              Icon(
-                Icons.wb_cloudy,
-                color: Colors.blue,
-                size: 16,
-              ),
-              SizedBox(width: 8),
-              Text(
-                '50%',
-                style: TextStyle(
-                  color: Colors.blue,
-                  fontSize: 10,
-                ),
-              ),
-            ],
-          ),
-          SizedBox(height: 4),
-          Text(
-            '85° 69°',
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 10,
-            ),
-          ),
-          SizedBox(height: 8),
-          Row(
-            children: [
-              Text(
-                'SAM',
-                style: TextStyle(
-                  color: Colors.grey[400],
-                  fontSize: 10,
-                ),
-              ),
-              SizedBox(width: 8),
-              Icon(
-                Icons.thunderstorm,
-                color: Colors.orange,
-                size: 16,
-              ),
-            ],
-          ),
-          SizedBox(height: 4),
-          Text(
-            '84° 68°',
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 10,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildRadarMap() {
-    return Container(
-      decoration: BoxDecoration(
-        color: Color(0xFF2a2a2a),
-      ),
-      child: Stack(
-        children: [
-          // Carte OpenStreetMap en plein écran
-          FlutterMap(
-            mapController: _mapController,
-            options: MapOptions(
-              initialCenter: _currentLocation ?? _casablancaCenter,
-              initialZoom: 6.0,
-              minZoom: 4.0,
-              maxZoom: 15.0,
-            ),
-            children: [
-              TileLayer(
-                urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                userAgentPackageName: 'com.example.weatherradar',
-                maxZoom: 19,
-              ),
-              PolylineLayer(polylines: _polylines),
-              MarkerLayer(markers: _weatherMarkers),
-            ],
-          ),
-          
-          // Overlay radar animé
-          Positioned.fill(
-            child: AnimatedBuilder(
-              animation: _radarAnimationController,
-              builder: (context, child) {
-                return CustomPaint(
-                  painter: RadarOverlayPainter(_radarAnimationController.value),
-                );
-              },
-            ),
-          ),
-          
-          // Info route en haut à droite
-          Positioned(
-            top: 200,
-            right: 16,
-            child: Container(
-              padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: BoxDecoration(
-                color: Colors.black.withOpacity(0.8),
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    width: 8,
-                    height: 8,
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      shape: BoxShape.circle,
-                    ),
-                  ),
-                  SizedBox(width: 8),
-                  Text(
-                    'Dry road @ 10:01 PM',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 12,
-                    ),
+                        ],
+                      ),
+                    ],
                   ),
                 ],
               ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildBottomControls() {
-    return Container(
-      padding: EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.black.withOpacity(0.8),
-        borderRadius: BorderRadius.only(
-          topLeft: Radius.circular(20),
-          topRight: Radius.circular(20),
+            );
+          },
         ),
       ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // Slider intensité
-          Row(
-            children: [
-              Container(
-                padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: Colors.green,
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: Text(
-                  'LOW',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 10,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
-              Expanded(
-                child: SliderTheme(
-                  data: SliderThemeData(
-                    trackHeight: 6,
-                    thumbShape: RoundSliderThumbShape(enabledThumbRadius: 10),
-                    overlayShape: RoundSliderOverlayShape(overlayRadius: 20),
-                  ),
-                  child: Slider(
-                    value: _timeSliderValue,
-                    onChanged: (value) {
-                      setState(() {
-                        _timeSliderValue = value;
-                      });
-                    },
-                    activeColor: Colors.green,
-                    inactiveColor: Colors.red,
-                  ),
-                ),
-              ),
-              Container(
-                padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: Colors.red,
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: Text(
-                  'HIGH',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 10,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          
-          SizedBox(height: 16),
-          
-          // Contrôles lecture
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Text(
-                '12:30 PM',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-              SizedBox(width: 30),
-              GestureDetector(
-                onTap: () {
-                  setState(() {
-                    _isPlaying = !_isPlaying;
-                  });
-                  if (_isPlaying) {
-                    _radarAnimationController.repeat();
-                  } else {
-                    _radarAnimationController.stop();
-                  }
-                },
-                child: Container(
-                  width: 60,
-                  height: 60,
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.3),
-                    shape: BoxShape.circle,
-                    border: Border.all(color: Colors.white.withOpacity(0.5), width: 2),
-                  ),
-                  child: Icon(
-                    _isPlaying ? Icons.pause : Icons.play_arrow,
-                    color: Colors.white,
-                    size: 30,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ],
+    );
+  }
+
+  Widget _buildChangeDestinationButton() {
+    return Positioned(
+      top: 120,
+      right: 16,
+      child: FloatingActionButton(
+        onPressed: () {
+          setState(() {
+            _showSearchBar = true;
+            _hasActiveRoute = false;
+          });
+        },
+        backgroundColor: Color(0xFF1a1a1a),
+        mini: true,
+        child: Icon(Icons.edit_location, color: Colors.white),
       ),
     );
   }
 
-  void _showWeatherDetails(WeatherData weather) {
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          backgroundColor: Color(0xFF2a2a2a),
-          title: Text(
-            'Détails Météo',
-            style: TextStyle(color: Colors.white),
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                '🌡️ Température: ${weather.temperature.toStringAsFixed(1)}°C',
-                style: TextStyle(color: Colors.white),
-              ),
-              SizedBox(height: 8),
-              Text(
-                '📝 Conditions: ${weather.description}',
-                style: TextStyle(color: Colors.white),
-              ),
-              SizedBox(height: 8),
-              Text(
-                '💨 Vent: ${weather.windSpeed.toStringAsFixed(1)} m/s',
-                style: TextStyle(color: Colors.white),
-              ),
-              SizedBox(height: 8),
-              Text(
-                '💧 Humidité: ${weather.humidity}%',
-                style: TextStyle(color: Colors.white),
-              ),
-              SizedBox(height: 8),
-              Text(
-                '👁️ Visibilité: ${weather.visibility.toStringAsFixed(1)} km',
-                style: TextStyle(color: Colors.white),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: Text(
-                'Fermer',
-                style: TextStyle(color: Colors.blue),
-              ),
-            ),
-          ],
-        );
-      },
+  Widget _buildLocationButton() {
+    return Positioned(
+      bottom: 140,
+      right: 16,
+      child: FloatingActionButton(
+        onPressed: _getCurrentLocation,
+        backgroundColor: Color(0xFF00C853),
+        child: _isLocationLoading
+            ? SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                ),
+              )
+            : Icon(Icons.my_location, color: Colors.white),
+      ),
     );
   }
 
-  @override
-  void dispose() {
-     _destinationController.dispose();
-    _radarAnimationController.dispose();
-    _pulseAnimationController.dispose();
-    super.dispose();
-  }
-}
-
-class RadarOverlayPainter extends CustomPainter {
-  final double animationValue;
-
-  RadarOverlayPainter(this.animationValue);
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint();
-    
-    // Zones météo animées
-    _drawWeatherZones(canvas, size, paint);
-    
-    // Lignes de front
-    _drawWeatherFronts(canvas, size, paint);
-  }
-
-  void _drawWeatherZones(Canvas canvas, Size size, Paint paint) {
-    // Zone verte (pluie légère)
-    paint.color = Colors.green.withOpacity(0.3 + animationValue * 0.2);
-    canvas.drawCircle(
-      Offset(size.width * 0.3, size.height * 0.6),
-      50 + (animationValue * 20),
-      paint,
+  Widget _buildResetButton() {
+    return Positioned(
+      bottom: 80,
+      right: 16,
+      child: FloatingActionButton(
+        onPressed: _clearRoute,
+        backgroundColor: Colors.red[700],
+        child: Icon(Icons.clear, color: Colors.white),
+      ),
     );
-    
-    // Zone jaune (pluie modérée)
-    paint.color = Colors.yellow.withOpacity(0.4 + animationValue * 0.2);
-    canvas.drawCircle(
-      Offset(size.width * 0.7, size.height * 0.4),
-      30 + (animationValue * 15),
-      paint,
-    );
-    
-    // Zone rouge (orages)
-    paint.color = Colors.red.withOpacity(0.3 + animationValue * 0.3);
-    canvas.drawCircle(
-      Offset(size.width * 0.8, size.height * 0.7),
-      25 + (animationValue * 10),
-      paint,
-    );
-  }
-
-  void _drawWeatherFronts(Canvas canvas, Size size, Paint paint) {
-    paint.color = Colors.white.withOpacity(0.8);
-    paint.strokeWidth = 2;
-    paint.style = PaintingStyle.stroke;
-    
-    // Fixed: Use ui.Path instead of latlong2.Path
-    final path = ui.Path();
-    path.moveTo(size.width * 0.1, size.height * 0.8);
-    path.quadraticBezierTo(
-      size.width * 0.5,
-      size.height * 0.3,
-      size.width * 0.9,
-      size.height * 0.4,
-    );
-    
-    canvas.drawPath(path, paint);
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) {
-    return true;
   }
 }
