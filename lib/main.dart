@@ -8,6 +8,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
 import 'dart:math' as math;
 import 'package:fuzzywuzzy/fuzzywuzzy.dart';
+import 'alerts_page.dart';
 
 void main() {
   runApp(WeatherRouteApp());
@@ -28,6 +29,21 @@ class WeatherRouteApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
     );
   }
+}
+class WeatherAlert {
+  final String type; // "temp", "rain", "storm", etc.
+  final String message;
+  final String segment;
+  final Color color;
+  final IconData icon;
+
+  WeatherAlert({
+    required this.type,
+    required this.message,
+    required this.segment,
+    required this.color,
+    required this.icon,
+  });
 }
 final Map<String, String> _cityVariations = {
   // Casablanca
@@ -509,15 +525,12 @@ final Map<String, String> _cityVariations = {
 String? findClosestCity(String userInput, List<String> cities) {
   if (userInput.isEmpty) return null;
   
-  // Normaliser l'entrée utilisateur
   final normalizedInput = userInput.toLowerCase().trim();
   
-  // Vérifier d'abord les variations connues
   if (_cityVariations.containsKey(normalizedInput)) {
     return _cityVariations[normalizedInput];
   }
   
-  // Ensuite vérifier une correspondance exacte (insensible à la casse)
   final exactMatch = cities.firstWhere(
     (city) => city.toLowerCase() == normalizedInput,
     orElse: () => '',
@@ -525,12 +538,11 @@ String? findClosestCity(String userInput, List<String> cities) {
   
   if (exactMatch.isNotEmpty) return exactMatch;
 
-  // Si aucune correspondance exacte, utiliser fuzzy matching
   final bestMatch = extractTop(
     query: normalizedInput,
     choices: cities,
     limit: 1,
-    cutoff: 60, // Seuil de similarité (0-100)
+    cutoff: 60,
   ).firstOrNull;
 
   return (bestMatch != null && bestMatch.score >= 60) ? bestMatch.choice : null;
@@ -579,6 +591,7 @@ class RouteSegment {
 }
 
 class WeatherRouteScreen extends StatefulWidget {
+  
   @override
   _WeatherRouteScreenState createState() => _WeatherRouteScreenState();
 }
@@ -711,6 +724,82 @@ class _WeatherRouteScreenState extends State<WeatherRouteScreen>
   'Quartier Hay Mohammadi': LatLng(33.5450, -7.5500),
 };
 
+List<WeatherAlert> _checkForWeatherAlerts() {
+    List<WeatherAlert> alerts = [];
+
+    for (var segment in _routeSegments) {
+      if (segment.startWeather.temperature > 35 || segment.endWeather.temperature > 35) {
+        alerts.add(WeatherAlert(
+          type: "temp",
+          message: "Température élevée (${segment.startWeather.temperature.toInt()}°C) sur ${segment.segmentName}",
+          segment: segment.segmentName,
+          color: Colors.orange,
+          icon: Icons.warning,
+        ));
+      }
+
+      if (segment.startWeather.weatherCondition.contains('orage') || 
+          segment.endWeather.weatherCondition.contains('orage')) {
+        alerts.add(WeatherAlert(
+          type: "storm",
+          message: "Orages prévus sur ${segment.segmentName}",
+          segment: segment.segmentName,
+          color: Colors.deepPurple,
+          icon: Icons.thunderstorm,
+        ));
+      }
+
+      if (segment.startWeather.weatherCondition.contains('pluie forte') || 
+          segment.endWeather.weatherCondition.contains('pluie forte')) {
+        alerts.add(WeatherAlert(
+          type: "rain",
+          message: "Pluie forte sur ${segment.segmentName}",
+          segment: segment.segmentName,
+          color: Colors.blue,
+          icon: Icons.water_drop,
+        ));
+      }
+
+      if (segment.startWeather.windSpeed > 30 || segment.endWeather.windSpeed > 30) {
+        alerts.add(WeatherAlert(
+          type: "wind",
+          message: "Vent fort (${segment.startWeather.windSpeed.toInt()} km/h) sur ${segment.segmentName}",
+          segment: segment.segmentName,
+          color: Colors.green,
+          icon: Icons.air,
+        ));
+      }
+    }
+
+    return alerts;
+  }
+
+ void _navigateToAlertsPage() {
+    final alerts = _checkForWeatherAlerts();
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => AlertsPage(alerts: alerts),
+      ),
+    );
+  }
+
+ Widget _buildAlertsButton() {
+    return Positioned(
+      bottom: 200,
+      right: 16,
+      child: FloatingActionButton(
+        onPressed: _navigateToAlertsPage,
+        backgroundColor: Colors.orange,
+        mini: true,
+        child: Badge(
+          isLabelVisible: _checkForWeatherAlerts().isNotEmpty,
+          label: Text(_checkForWeatherAlerts().length.toString()),
+          child: Icon(Icons.notifications_active, color: Colors.white),
+        ),
+      ),
+    );
+  }
 Future<void> _proceedWithRouteCalculation(String displayName, LatLng destinationCoords) async {
   if (_currentLocation == null) return;
 
@@ -1374,6 +1463,7 @@ Future<void> _calculateRouteWeather(String destination) async {
           
           _buildLocationButton(),
           if (_hasActiveRoute) _buildResetButton(),
+            _buildAlertsButton(),
         ],
       ),
     );
