@@ -1,0 +1,440 @@
+{
+  "cities": {
+    "Casablanca": {
+      "variations": [
+        "casablanca",
+        "casa",
+        "dar beida",
+        "dar el beida",
+        "casabianca",
+        "casabalnca"
+      ],
+      "coordinates": {
+        "latitude": 33.5731,
+        "longitude": -7.5898
+      }
+    },
+    "Rabat": {
+      "variations": [
+        "rabat",
+        "rabatt",
+        "rebat",
+        "rabbat"
+      ],
+      "coordinates": {
+        "latitude": 34.0209,
+        "longitude": -6.8416
+      }
+    },
+    "Marrakech": {
+      "variations": [
+        "marrakech",
+        "marrakesh",
+        "marakech",
+        "marakesh",
+        "marakkech",
+        "marrakch",
+        "marrakec",
+        "marakeche",
+        "marakesch"
+      ],
+      "coordinates": {
+        "latitude": 31.6295,
+        "longitude": -7.9811
+      }
+    },
+    "Fès": {
+      "variations": [
+        "fès",
+        "fez",
+        "fas",
+        "fass",
+        "fese"
+      ],
+      "coordinates": {
+        "latitude": 34.0181,
+        "longitude": -5.0078
+      }
+    },
+    "Salé": {
+      "variations": [
+        "salé",
+        "sale",
+        "sala",
+        "salle"
+      ],
+      "coordinates": {
+        "latitude": 34.0531,
+        "longitude": -6.7985
+      }
+    },
+    "Tanger": {
+      "variations": [
+        "tanger",
+        "tangier",
+        "tanja",
+        "tanjer",
+        "tangiers"
+      ],
+      "coordinates": {
+        "latitude": 35.7595,
+        "longitude": -5.8340
+      }
+    },
+    "Meknès": {
+      "variations": [
+        "meknès",
+        "meknes",
+        "meknas",
+        "meqnes",
+        "mekness"
+      ],
+      "coordinates": {
+        "latitude": 33.8935,
+        "longitude": -5.5473
+      }
+    },
+    "Oujda": {
+      "variations": [
+        "oujda",
+        "wujda",
+        "oujdah",
+        "ujda"
+      ],
+      "coordinates": {
+        "latitude": 34.6814,
+        "longitude": -1.9086
+      }
+    },
+    "Kenitra": {
+      "variations": [
+        "kenitra",
+        "kénitra",
+        "qenitra",
+        "port lyautey",
+        "kenita"
+      ],
+      "coordinates": {
+        "latitude": 34.2610,
+        "longitude": -6.5802
+      }
+    },
+    "Tétouan": {
+      "variations": [
+        "tétouan",
+        "tetouan",
+        "titwan",
+        "tetuan",
+        "tétuan"
+      ],
+      "coordinates": {
+        "latitude": 35.5889,
+        "longitude": -5.3626
+      }
+    },
+    "Safi": {
+      "variations": [
+        "safi",
+        "saffi",
+        "asafi",
+        "safi city"
+      ],
+      "coordinates": {
+        "latitude": 32.2994,
+        "longitude": -9.2372
+      }
+    },
+    "Mohammedia": {
+      "variations": [
+        "mohammedia",
+        "mohamedia",
+        "fedala",
+        "mohammadia"
+      ],
+      "coordinates": {
+        "latitude": 33.6866,
+        "longitude": -7.3830
+      }
+    },
+    "Khouribga": {
+      "variations": [
+        "khouribga",
+        "khuribga",
+        "khoribga",
+        "khouriga"
+      ],
+      "coordinates": {
+        "latitude": 32.8811,
+        "longitude": -6.9063
+      }
+    },
+    "El Jadida": {
+      "variations": [
+        "el jadida",
+        "eljadida",
+        "mazagan",
+        "jadida",
+        "al jadida"
+      ],
+      "coordinates": {
+        "latitude": 33.2316,
+        "longitude": -8.5007
+      }
+    },
+    "Béni Mellal": {
+      "variations": [
+        "béni mellal",
+        "beni mellal",
+        "bni mellal",
+        "benimellal"
+      ],
+      "coordinates": {
+        "latitude": 32.3373,
+        "longitude": -6.3498
+      }
+    },
+    "Nador": {
+      "variations": [
+        "nador",
+        "an nador",
+        "nadhur",
+        "nadur"
+      ],
+      "coordinates": {
+        "latitude": 35.1681,
+        "longitude": -2.9287
+      }
+    },
+    "Taza": {
+      "variations": [
+        "taza",
+        "tazah",
+        "tasa"
+      ],
+      "coordinates": {
+        "latitude": 34.2137,
+        "longitude": -4.0103
+      }
+    },
+    "Settat": {
+      "variations": [
+        "settat",
+        "setttat",
+        "sitat",
+        "setatt"
+      ],
+      "coordinates": {
+        "latitude": 33.0013,
+        "longitude": -7.6217
+      }
+    },
+    "Larache": {
+      "variations": [
+        "larache",
+        "al araich",
+        "laraach",
+        "laaraich"
+      ],
+      "coordinates": {
+        "latitude": 35.1932,
+        "longitude": -6.1557
+      }
+    },
+    "Ksar el-Kebir": {
+      "variations": [
+        "ksar el-kebir",
+        "ksar el kebir",
+        "qsar al kabir",
+        "alcazarquivir"
+      ],
+      "coordinates": {
+        "latitude": 35.0017,
+        "longitude": -5.9077
+      }
+    },
+    "Khemisset": {
+      "variations": [
+        "khemisset",
+        "khémisset",
+        "khemis",
+        "khmisset"
+      ],
+      "coordinates": {
+        "latitude": 33.8244,
+        "longitude": -6.0660
+      }
+    },
+    "Berkane": {
+      "variations": [
+        "berkane",
+        "berkan",
+        "barkane"
+      ],
+      "coordinates": {
+        "latitude": 34.9218,
+        "longitude": -2.3183
+      }
+    },
+    "Taourirt": {
+      "variations": [
+        "taourirt",
+        "tawrirt",
+        "taouririt"
+      ],
+      "coordinates": {
+        "latitude": 34.4095,
+        "longitude": -2.8953
+      }
+    },
+    "Agadir": {
+      "variations": [
+        "agadir",
+        "agadyr",
+        "agadir city",
+        "agadier"
+      ],
+      "coordinates": {
+        "latitude": 30.4278,
+        "longitude": -9.5981
+      }
+    },
+    "Essaouira": {
+      "variations": [
+        "essaouira",
+        "mogador",
+        "assaouira",
+        "essawira"
+      ],
+      "coordinates": {
+        "latitude": 31.5085,
+        "longitude": -9.7595
+      }
+    },
+    "Ouarzazate": {
+      "variations": [
+        "ouarzazate",
+        "warzazat",
+        "ouarzazate city",
+        "warzazate"
+      ],
+      "coordinates": {
+        "latitude": 30.9335,
+        "longitude": -6.9370
+      }
+    },
+    "Zagora": {
+      "variations": [
+        "zagora",
+        "zagoura",
+        "zagorah"
+      ],
+      "coordinates": {
+        "latitude": 30.3276,
+        "longitude": -5.8372
+      }
+    },
+    "Errachidia": {
+      "variations": [
+        "errachidia",
+        "er rachidia",
+        "rachidia",
+        "ksar es souk"
+      ],
+      "coordinates": {
+        "latitude": 31.9314,
+        "longitude": -4.4244
+      }
+    },
+    "Tiznit": {
+      "variations": [
+        "tiznit",
+        "tiznet",
+        "tizniet"
+      ],
+      "coordinates": {
+        "latitude": 29.6974,
+        "longitude": -9.7316
+      }
+    },
+    "Tan-Tan": {
+      "variations": [
+        "tan-tan",
+        "tan tan",
+        "tantan"
+      ],
+      "coordinates": {
+        "latitude": 28.4378,
+        "longitude": -11.1031
+      }
+    },
+    "Laâyoune": {
+      "variations": [
+        "laâyoune",
+        "laayoune",
+        "el aaiun",
+        "layoun"
+      ],
+      "coordinates": {
+        "latitude": 27.1253,
+        "longitude": -13.1625
+      }
+    },
+    "Dakhla": {
+      "variations": [
+        "dakhla",
+        "dakla",
+        "villa cisneros"
+      ],
+      "coordinates": {
+        "latitude": 23.6850,
+        "longitude": -15.9570
+      }
+    },
+    "Al Hoceima": {
+      "variations": [
+        "al hoceima",
+        "alhucemas",
+        "hoceima",
+        "al husaima"
+      ],
+      "coordinates": {
+        "latitude": 35.2517,
+        "longitude": -3.9372
+      }
+    },
+    "Chefchaouen": {
+      "variations": [
+        "chefchaouen",
+        "chaouen",
+        "xauen",
+        "chechaouen"
+      ],
+      "coordinates": {
+        "latitude": 35.1688,
+        "longitude": -5.2636
+      }
+    },
+    "Ifrane": {
+      "variations": [
+        "ifrane",
+        "ifran",
+        "ifren"
+      ],
+      "coordinates": {
+        "latitude": 33.5228,
+        "longitude": -5.1106
+      }
+    },
+    "Azrou": {
+      "variations": [
+        "azrou",
+        "azru",
+        "azrow"
+      ],
+      "coordinates": {
+        "latitude": 33.4341,
+        "longitude": -5.2217
+      }
+    }
+  }
+}
