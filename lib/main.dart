@@ -716,7 +716,7 @@ class _WeatherRouteScreenState extends State<WeatherRouteScreen>
   'Quartier Racine': LatLng(33.5694, -7.6523),
   'Quartier des Hôpitaux': LatLng(33.5799, -7.6442),
   'Quartier Palmier': LatLng(33.5833, -7.6389),
-  'Quartier Oasis': LatLng(33.5500, -7.6800),
+  'Quartier Oasis': LatLng(33.5500, -7.6800), 
   'Quartier Californie': LatLng(33.5600, -7.6650),
   'Quartier Beauséjour': LatLng(33.5722, -7.6500),
   'Quartier Polo': LatLng(33.5650, -7.6400),
