@@ -10,6 +10,7 @@ import 'dart:math' as math;
 import 'package:fuzzywuzzy/fuzzywuzzy.dart';
 import 'alerts_page.dart';
 import 'recommendation_page.dart';
+import 'package:flutter/services.dart' show rootBundle;
 
 void main() {
   runApp(WeatherRouteApp());
@@ -49,508 +50,8 @@ class WeatherAlert {
   });
 }
 
-final Map<String, String> _cityVariations = {
-  // Casablanca
-  'casablanca': 'Casablanca',
-  'casa': 'Casablanca',
-  'dar beida': 'Casablanca',
-  'dar el beida': 'Casablanca',
-  'casabianca': 'Casablanca',
-  'casabalnca': 'Casablanca',
-  'casablanca': 'Casablanca',
 
-  // Rabat
-  'rabat': 'Rabat',
-  'rabatt': 'Rabat',
-  'rebat': 'Rabat',
-  'rabbat': 'Rabat',
 
-  // Marrakech
-  'marrakech': 'Marrakech',
-  'marrakesh': 'Marrakech',
-  'marakech': 'Marrakech',
-  'marakesh': 'Marrakech',
-  'marakkech': 'Marrakech',
-  'marrakch': 'Marrakech',
-  'marrakec': 'Marrakech',
-  'marakeche': 'Marrakech',
-  'marakesch': 'Marrakech',
-
-  // Fès
-  'fes': 'Fès',
-  'fez': 'Fès',
-  'fas': 'Fès',
-  'fass': 'Fès',
-
-  // Tanger
-  'tanger': 'Tanger',
-  'tangier': 'Tanger',
-  'tangiers': 'Tanger',
-  'tanja': 'Tanger',
-  'tangere': 'Tanger',
-  'tanjer': 'Tanger',
-
-  // Agadir
-  'agadir': 'Agadir',
-  'agadier': 'Agadir',
-  'agadire': 'Agadir',
-  'agader': 'Agadir',
-
-  // Salé
-  'sale': 'Salé',
-  'salé': 'Salé',
-  'sala': 'Salé',
-  'salle': 'Salé',
-
-  // Meknès
-  'meknes': 'Meknès',
-  'meknès': 'Meknès',
-  'meknas': 'Meknès',
-  'meknass': 'Meknès',
-  'mequinez': 'Meknès',
-  'mekinez': 'Meknès',
-
-  // Oujda
-  'oujda': 'Oujda',
-  'oujeda': 'Oujda',
-  'wajda': 'Oujda',
-  'ujda': 'Oujda',
-
-  // Kenitra
-  'kenitra': 'Kenitra',
-  'kenitra': 'Kenitra',
-  'kénitra': 'Kenitra',
-  'qenitra': 'Kenitra',
-  'port lyautey': 'Kenitra',
-
-  // Tétouan
-  'tetouan': 'Tétouan',
-  'tétouan': 'Tétouan',
-  'tetuan': 'Tétouan',
-  'titwan': 'Tétouan',
-  'tetuoan': 'Tétouan',
-
-  // Safi
-  'safi': 'Safi',
-  'saffi': 'Safi',
-  'asfi': 'Safi',
-
-  // Mohammedia
-  'mohammedia': 'Mohammedia',
-  'mohamedia': 'Mohammedia',
-  'mohammadya': 'Mohammedia',
-  'fedala': 'Mohammedia',
-
-  // Khouribga
-  'khouribga': 'Khouribga',
-  'khouribgha': 'Khouribga',
-  'khuribga': 'Khouribga',
-  'houribga': 'Khouribga',
-
-  // El Jadida
-  'el jadida': 'El Jadida',
-  'eljadida': 'El Jadida',
-  'jadida': 'El Jadida',
-  'el-jadida': 'El Jadida',
-  'mazagan': 'El Jadida',
-
-  // Beni Mellal
-  'beni mellal': 'Beni Mellal',
-  'benimellal': 'Beni Mellal',
-  'bni mellal': 'Beni Mellal',
-
-  // Nador
-  'nador': 'Nador',
-  'nadur': 'Nador',
-  'nadir': 'Nador',
-
-  // Taza
-  'taza': 'Taza',
-  'taza': 'Taza',
-  'teza': 'Taza',
-
-  // Settat
-  'settat': 'Settat',
-  'setttat': 'Settat',
-  'setat': 'Settat',
-
-  // Larache
-  'larache': 'Larache',
-  'el araish': 'Larache',
-  'elaraish': 'Larache',
-  'araish': 'Larache',
-
-  // Ksar El Kebir
-  'ksar el kebir': 'Ksar El Kebir',
-  'ksar elkebir': 'Ksar El Kebir',
-  'ksarelkebir': 'Ksar El Kebir',
-  'alcazarquivir': 'Ksar El Kebir',
-
-  // Khemisset
-  'khemisset': 'Khemisset',
-  'khémisset': 'Khemisset',
-  'khemiset': 'Khemisset',
-  'khmisset': 'Khemisset',
-
-  // Guelmim
-  'guelmim': 'Guelmim',
-  'goulimine': 'Guelmim',
-  'guelmin': 'Guelmim',
-  'guellmim': 'Guelmim',
-
-  // Berrechid
-  'berrechid': 'Berrechid',
-  'berrachid': 'Berrechid',
-  'brechid': 'Berrechid',
-
-  // Oued Zem
-  'oued zem': 'Oued Zem',
-  'ouedzem': 'Oued Zem',
-  'wed zem': 'Oued Zem',
-
-  // Taourirt
-  'taourirt': 'Taourirt',
-  'tawrirt': 'Taourirt',
-  'taourit': 'Taourirt',
-
-  // Berkane
-  'berkane': 'Berkane',
-  'berkan': 'Berkane',
-  'barkane': 'Berkane',
-
-  // Tiznit
-  'tiznit': 'Tiznit',
-  'tiznet': 'Tiznit',
-  'tizneet': 'Tiznit',
-
-  // Tan-Tan
-  'tan-tan': 'Tan-Tan',
-  'tantan': 'Tan-Tan',
-  'tan tan': 'Tan-Tan',
-
-  // Ouarzazate
-  'ouarzazate': 'Ouarzazate',
-  'warzazat': 'Ouarzazate',
-  'ouarzazat': 'Ouarzazate',
-  'warzazate': 'Ouarzazate',
-  'ourzazate': 'Ouarzazate',
-
-  // Dakhla
-  'dakhla': 'Dakhla',
-  'dajla': 'Dakhla',
-  'dakla': 'Dakhla',
-  'villa cisneros': 'Dakhla',
-
-  // Laayoune
-  'laayoune': 'Laayoune',
-  'layoune': 'Laayoune',
-  'el aaiun': 'Laayoune',
-  'el ayoun': 'Laayoune',
-  'aaiun': 'Laayoune',
-
-  // Chefchaouen
-  'chefchaouen': 'Chefchaouen',
-  'chaouen': 'Chefchaouen',
-  'chef chaouen': 'Chefchaouen',
-  'chefchaoun': 'Chefchaouen',
-  'xauen': 'Chefchaouen',
-  'chaoun': 'Chefchaouen',
-
-  // Essaouira
-  'essaouira': 'Essaouira',
-  'saouira': 'Essaouira',
-  'mogador': 'Essaouira',
-  'esaouira': 'Essaouira',
-  'essawira': 'Essaouira',
-
-  // Ifrane
-  'ifrane': 'Ifrane',
-  'ifran': 'Ifrane',
-  'ifren': 'Ifrane',
-
-  // Azrou
-  'azrou': 'Azrou',
-  'azru': 'Azrou',
-  'azroo': 'Azrou',
-
-  // Midelt
-  'midelt': 'Midelt',
-  'midlet': 'Midelt',
-  'midalt': 'Midelt',
-
-  // Errachidia
-  'errachidia': 'Errachidia',
-  'rachidia': 'Errachidia',
-  'rachidiya': 'Errachidia',
-  'ksar es souk': 'Errachidia',
-
-  // Zagora
-  'zagora': 'Zagora',
-  'zagorra': 'Zagora',
-  'zagoura': 'Zagora',
-
-  // Merzouga
-  'merzouga': 'Merzouga',
-  'merzuga': 'Merzouga',
-  'merzouga': 'Merzouga',
-
-  // Tinghir
-  'tinghir': 'Tinghir',
-  'tineghir': 'Tinghir',
-  'tinerhir': 'Tinghir',
-  'tinrir': 'Tinghir',
-
-  // Tafraoute
-  'tafraoute': 'Tafraoute',
-  'tafraout': 'Tafraoute',
-  'tafraut': 'Tafraoute',
-
-  // Asilah
-  'asilah': 'Asilah',
-  'asila': 'Asilah',
-  'arcila': 'Asilah',
-  'arzila': 'Asilah',
-
-  // Al Hoceima
-  'al hoceima': 'Al Hoceima',
-  'alhoceima': 'Al Hoceima',
-  'alhucemas': 'Al Hoceima',
-  'hoceima': 'Al Hoceima',
-
-  // Martil
-  'martil': 'Martil',
-  'martiel': 'Martil',
-  'marteel': 'Martil',
-
-  // Cabo Negro
-  'cabo negro': 'Cabo Negro',
-  'cabonegro': 'Cabo Negro',
-  'cap negro': 'Cabo Negro',
-
-  // Mehdia
-  'mehdia': 'Mehdia',
-  'mehdya': 'Mehdia',
-  'medya': 'Mehdia',
-
-  // Oualidia
-  'oualidia': 'Oualidia',
-  'walidia': 'Oualidia',
-  'oualidya': 'Oualidia',
-
-  // Sidi Ifni
-  'sidi ifni': 'Sidi Ifni',
-  'sidiifni': 'Sidi Ifni',
-  'si ifni': 'Sidi Ifni',
-
-  // Boulemane
-  'boulemane': 'Boulemane',
-  'boulman': 'Boulemane',
-  'boulmane': 'Boulemane',
-
-  // Figuig
-  'figuig': 'Figuig',
-  'figig': 'Figuig',
-  'figuigue': 'Figuig',
-
-  // Jerada
-  'jerada': 'Jerada',
-  'jrada': 'Jerada',
-  'jerrada': 'Jerada',
-
-  // Sidi Slimane
-  'sidi slimane': 'Sidi Slimane',
-  'sidislimane': 'Sidi Slimane',
-  'si slimane': 'Sidi Slimane',
-
-  // Sidi Kacem
-  'sidi kacem': 'Sidi Kacem',
-  'sidikacem': 'Sidi Kacem',
-  'si kacem': 'Sidi Kacem',
-
-  // Youssoufia
-  'youssoufia': 'Youssoufia',
-  'yousoufia': 'Youssoufia',
-  'louis gentil': 'Youssoufia',
-
-  // Skhirate
-  'skhirate': 'Skhirate',
-  'skhiratt': 'Skhirate',
-  'skirate': 'Skhirate',
-
-  // Temara
-  'temara': 'Temara',
-  'tmara': 'Temara',
-  'témara': 'Temara',
-
-  // Ain Harrouda
-  'ain harrouda': 'Ain Harrouda',
-  'ainharrouda': 'Ain Harrouda',
-  'ain harouda': 'Ain Harrouda',
-
-  // Ben Guerir
-  'ben guerir': 'Ben Guerir',
-  'benguerir': 'Ben Guerir',
-  'ben grir': 'Ben Guerir',
-
-  // Lieux emblématiques de Casablanca
-  'hassan ii mosque': 'Hassan II Mosque',
-  'hassan 2 mosque': 'Hassan II Mosque',
-  'mosquee hassan ii': 'Hassan II Mosque',
-  'mosquée hassan ii': 'Hassan II Mosque',
-  'mosquee hassan 2': 'Hassan II Mosque',
-  'grande mosquee': 'Hassan II Mosque',
-
-  'quartier habous': 'Quartier Habous',
-  'habous': 'Quartier Habous',
-  'habous quarter': 'Quartier Habous',
-  'nouvelle medina': 'Quartier Habous',
-
-  'place mohammed v': 'Place Mohammed V',
-  'place mohammed 5': 'Place Mohammed V',
-  'mohammed v square': 'Place Mohammed V',
-  'place moh v': 'Place Mohammed V',
-
-  'cathedrale du sacre-coeur': 'Cathédrale du Sacré-Cœur',
-  'cathedrale': 'Cathédrale du Sacré-Cœur',
-  'sacred heart cathedral': 'Cathédrale du Sacré-Cœur',
-  'sacre coeur': 'Cathédrale du Sacré-Cœur',
-
-  'marche central': 'Marché Central',
-  'marché central': 'Marché Central',
-  'central market': 'Marché Central',
-  'marche': 'Marché Central',
-
-  'corniche ain diab': 'Corniche Ain Diab',
-  'corniche': 'Corniche Ain Diab',
-  'ain diab': 'Corniche Ain Diab',
-  'aindiab': 'Corniche Ain Diab',
-
-  'twin center': 'Twin Center',
-  'twins center': 'Twin Center',
-  'twin centre': 'Twin Center',
-  'tours jumelles': 'Twin Center',
-
-  'morocco mall': 'Morocco Mall',
-  'morocco mall': 'Morocco Mall',
-  'maroc mall': 'Morocco Mall',
-
-  'ancienne medina': 'Ancienne Médina',
-  'ancienne médina': 'Ancienne Médina',
-  'old medina': 'Ancienne Médina',
-  'medina': 'Ancienne Médina',
-  'médina': 'Ancienne Médina',
-
-  'port de casablanca': 'Port de Casablanca',
-  'port casa': 'Port de Casablanca',
-  'casablanca port': 'Port de Casablanca',
-  'port': 'Port de Casablanca',
-
-  'parc de la ligue arabe': 'Parc de la Ligue Arabe',
-  'parc ligue arabe': 'Parc de la Ligue Arabe',
-  'ligue arabe': 'Parc de la Ligue Arabe',
-  'arab league park': 'Parc de la Ligue Arabe',
-
-  'boulevard zerktouni': 'Boulevard Zerktouni',
-  'zerktouni': 'Boulevard Zerktouni',
-  'bd zerktouni': 'Boulevard Zerktouni',
-
-  'quartier gauthier': 'Quartier Gauthier',
-  'gauthier': 'Quartier Gauthier',
-  'gauthier quarter': 'Quartier Gauthier',
-
-  'anfa place': 'Anfa Place',
-  'anfa': 'Anfa Place',
-  'anfaplace': 'Anfa Place',
-
-  'sidi abderrahman': 'Sidi Abderrahman',
-  'sidi abderrahmane': 'Sidi Abderrahman',
-  'si abderrahman': 'Sidi Abderrahman',
-
-  'quartier maarif': 'Quartier Maarif',
-  'maarif': 'Quartier Maarif',
-  'maarif quarter': 'Quartier Maarif',
-  'ma3arif': 'Quartier Maarif',
-
-  'technopark': 'Technopark',
-  'techno park': 'Technopark',
-  'techno parc': 'Technopark',
-
-  'zenata': 'Zenata',
-  'zinata': 'Zenata',
-  'znata': 'Zenata',
-
-  'stade mohammed v': 'Stade Mohammed V',
-  'stade mohammed 5': 'Stade Mohammed V',
-  'stadium mohammed v': 'Stade Mohammed V',
-  'complexe mohammed v': 'Stade Mohammed V',
-
-  'villa des arts': 'Villa des Arts',
-  'villa arts': 'Villa des Arts',
-  'villa d arts': 'Villa des Arts',
-
-  'quartier bourgogne': 'Quartier Bourgogne',
-  'bourgogne': 'Quartier Bourgogne',
-
-  'quartier racine': 'Quartier Racine',
-  'racine': 'Quartier Racine',
-
-  'quartier des hopitaux': 'Quartier des Hôpitaux',
-  'quartier des hôpitaux': 'Quartier des Hôpitaux',
-  'quartier hopitaux': 'Quartier des Hôpitaux',
-  'hopitaux': 'Quartier des Hôpitaux',
-
-  'quartier palmier': 'Quartier Palmier',
-  'palmier': 'Quartier Palmier',
-
-  'quartier oasis': 'Quartier Oasis',
-  'oasis': 'Quartier Oasis',
-
-  'quartier californie': 'Quartier Californie',
-  'californie': 'Quartier Californie',
-  'california': 'Quartier Californie',
-
-  'quartier beausejour': 'Quartier Beauséjour',
-  'quartier beauséjour': 'Quartier Beauséjour',
-  'beausejour': 'Quartier Beauséjour',
-  'beauséjour': 'Quartier Beauséjour',
-
-  'quartier polo': 'Quartier Polo',
-  'polo': 'Quartier Polo',
-
-  'quartier oulfa': 'Quartier Oulfa',
-  'oulfa': 'Quartier Oulfa',
-  'wlfa': 'Quartier Oulfa',
-
-  'quartier hay mohammadi': 'Quartier Hay Mohammadi',
-  'hay mohammadi': 'Quartier Hay Mohammadi',
-  'haymohammadi': 'Quartier Hay Mohammadi',
-  'mohammadi': 'Quartier Hay Mohammadi',
-};
-String? findClosestCity(String userInput, List<String> cities) {
-  if (userInput.isEmpty) return null;
-
-  final normalizedInput = userInput.toLowerCase().trim();
-
-  if (_cityVariations.containsKey(normalizedInput)) {
-    return _cityVariations[normalizedInput];
-  }
-
-  final exactMatch = cities.firstWhere(
-    (city) => city.toLowerCase() == normalizedInput,
-    orElse: () => '',
-  );
-
-  if (exactMatch.isNotEmpty) return exactMatch;
-
-  final bestMatch = extractTop(
-    query: normalizedInput,
-    choices: cities,
-    limit: 1,
-    cutoff: 60,
-  ).firstOrNull;
-
-  return (bestMatch != null && bestMatch.score >= 60) ? bestMatch.choice : null;
-}
 
 class RouteWeatherPoint {
   final LatLng location;
@@ -607,6 +108,16 @@ class _WeatherRouteScreenState extends State<WeatherRouteScreen>
   final TextEditingController _searchController = TextEditingController();
   final Map<String, Map<String, dynamic>> _weatherCache = {};
 
+ Map<String, LatLng> _moroccanCities = {
+  'Casablanca': LatLng(33.5731, -7.5898), // Valeurs par défaut
+  'Rabat': LatLng(34.0209, -6.8416),
+};
+
+Map<String, String> _cityVariations = {
+  'casablanca': 'Casablanca', // Valeurs par défaut
+  'casa': 'Casablanca',
+  'rabat': 'Rabat',
+};
   late AnimationController _loadingController;
   late AnimationController _pulseController;
   LatLng? _currentLocation;
@@ -627,111 +138,57 @@ class _WeatherRouteScreenState extends State<WeatherRouteScreen>
   String _routeDuration = "";
   String _selectedDestination = "";
 
-  final Map<String, LatLng> _moroccanCities = {
-    // Grandes métropoles
-    'Casablanca': LatLng(33.5731, -7.5898),
-    'Rabat': LatLng(34.0209, -6.8416),
-    'Marrakech': LatLng(31.6295, -7.9811),
-    'Fès': LatLng(34.0181, -5.0078),
-    'Tanger': LatLng(35.7595, -5.8340),
-    'Agadir': LatLng(30.4278, -9.5981),
+ 
+  
+String? findClosestCity(String userInput, List<String> cities) {
+  if (userInput.isEmpty) return null;
 
-    // Villes importantes
-    'Salé': LatLng(34.0531, -6.7985),
-    'Meknès': LatLng(33.8935, -5.5473),
-    'Oujda': LatLng(34.6814, -1.9086),
-    'Kenitra': LatLng(34.2610, -6.5802),
-    'Tétouan': LatLng(35.5889, -5.3626),
-    'Safi': LatLng(32.2994, -9.2372),
-    'Mohammedia': LatLng(33.6861, -7.3826),
-    'Khouribga': LatLng(32.8811, -6.9063),
-    'El Jadida': LatLng(33.2316, -8.5007),
-    'Beni Mellal': LatLng(32.3373, -6.3498),
-    'Nador': LatLng(35.1681, -2.9287),
-    'Taza': LatLng(34.2133, -4.0103),
+  final normalizedInput = userInput.toLowerCase().trim();
 
-    // Villes moyennes
-    'Settat': LatLng(33.0018, -7.6160),
-    'Larache': LatLng(35.1932, -6.1563),
-    'Ksar El Kebir': LatLng(35.0017, -5.9090),
-    'Khemisset': LatLng(33.8244, -6.0691),
-    'Guelmim': LatLng(28.9870, -10.0574),
-    'Berrechid': LatLng(33.2655, -7.5877),
-    'Oued Zem': LatLng(32.8634, -6.5735),
-    'Taourirt': LatLng(34.4092, -2.8953),
-    'Berkane': LatLng(34.9252, -2.3220),
-    'Tiznit': LatLng(29.6974, -9.7316),
-    'Tan-Tan': LatLng(28.4378, -11.1036),
-    'Ouarzazate': LatLng(30.9335, -6.9370),
-    'Dakhla': LatLng(23.7185, -15.9582),
-    'Laayoune': LatLng(27.1253, -13.1625),
+ if (_cityVariations.containsKey(normalizedInput)) {
+    return _cityVariations[normalizedInput];
+  }
 
-    // Villes touristiques et historiques
-    'Chefchaouen': LatLng(35.1688, -5.2636),
-    'Essaouira': LatLng(31.5084, -9.7595),
-    'Ifrane': LatLng(33.5228, -5.1106),
-    'Azrou': LatLng(33.4345, -5.2110),
-    'Midelt': LatLng(32.6852, -4.7345),
-    'Errachidia': LatLng(31.9314, -4.4244),
-    'Zagora': LatLng(30.3276, -5.8368),
-    'Merzouga': LatLng(31.0801, -4.0135),
-    'Tinghir': LatLng(31.5145, -5.5331),
-    'Tafraoute': LatLng(29.7252, -8.9739),
+   final exactMatch = _moroccanCities.keys.firstWhere(
+    (city) => city.toLowerCase() == normalizedInput,
+    orElse: () => '',
+  );
 
-    // Villes côtières
-    'Asilah': LatLng(35.4656, -6.0353),
-    'Al Hoceima': LatLng(35.2517, -3.9372),
-    'Martil': LatLng(35.6178, -5.2756),
-    'Cabo Negro': LatLng(35.6889, -5.2944),
-    'Mehdia': LatLng(34.2542, -6.6436),
-    'Oualidia': LatLng(32.7364, -9.0306),
-    'Sidi Ifni': LatLng(29.3797, -10.1731),
+  if (exactMatch.isNotEmpty) return exactMatch;
 
-    // Autres villes importantes
-    'Boulemane': LatLng(33.3623, -4.7288),
-    'Figuig': LatLng(32.1091, -1.2255),
-    'Jerada': LatLng(34.3142, -2.1625),
-    'Sidi Slimane': LatLng(34.2654, -5.9263),
-    'Sidi Kacem': LatLng(34.2214, -5.7081),
-    'Youssoufia': LatLng(32.2465, -8.5311),
-    'Skhirate': LatLng(33.8569, -7.0403),
-    'Temara': LatLng(33.9289, -6.9067),
-    'Ain Harrouda': LatLng(33.6380, -7.2580),
-    'Ben Guerir': LatLng(32.2362, -7.9541),
+   final bestMatch = extractTop(
+    query: normalizedInput,
+    choices: _moroccanCities.keys.toList(),
+    limit: 1,
+    cutoff: 60,
+  ).firstOrNull;
 
-    // Lieux emblématiques de Casablanca
-    'Hassan II Mosque': LatLng(33.6080, -7.6327),
-    'Quartier Habous': LatLng(33.5845, -7.6103),
-    'Place Mohammed V': LatLng(33.5928, -7.6192),
-    'Cathédrale du Sacré-Cœur': LatLng(33.5956, -7.6212),
-    'Marché Central': LatLng(33.5943, -7.6167),
-    'Corniche Ain Diab': LatLng(33.5518, -7.6615),
-    'Twin Center': LatLng(33.5911, -7.6261),
-    'Morocco Mall': LatLng(33.5464, -7.6686),
-    'Ancienne Médina': LatLng(33.5970, -7.6151),
-    'Port de Casablanca': LatLng(33.6061, -7.6183),
-    'Parc de la Ligue Arabe': LatLng(33.5867, -7.6353),
-    'Boulevard Zerktouni': LatLng(33.5877, -7.6242),
-    'Quartier Gauthier': LatLng(33.5910, -7.6230),
-    'Anfa Place': LatLng(33.5738, -7.6410),
-    'Sidi Abderrahman': LatLng(33.5371, -7.6898),
-    'Quartier Maarif': LatLng(33.5836, -7.6198),
-    'Technopark': LatLng(33.5202, -7.6600),
-    'Zenata': LatLng(33.6425, -7.4892),
-    'Stade Mohammed V': LatLng(33.5267, -7.6591),
-    'Villa des Arts': LatLng(33.5889, -7.6403),
-    'Quartier Bourgogne': LatLng(33.5756, -7.6456),
-    'Quartier Racine': LatLng(33.5694, -7.6523),
-    'Quartier des Hôpitaux': LatLng(33.5799, -7.6442),
-    'Quartier Palmier': LatLng(33.5833, -7.6389),
-    'Quartier Oasis': LatLng(33.5500, -7.6800),
-    'Quartier Californie': LatLng(33.5600, -7.6650),
-    'Quartier Beauséjour': LatLng(33.5722, -7.6500),
-    'Quartier Polo': LatLng(33.5650, -7.6400),
-    'Quartier Oulfa': LatLng(33.5550, -7.5900),
-    'Quartier Hay Mohammadi': LatLng(33.5450, -7.5500),
-  };
-
+  return (bestMatch != null && bestMatch.score >= 60) ? bestMatch.choice : null;
+}
+Future<void> _loadCitiesData() async {
+  try {
+    final String response = await rootBundle.loadString('assets/cities.json');
+    final data = json.decode(response);
+    
+    final cities = data['cities'] as Map<String, dynamic>;
+    _moroccanCities = cities.map((key, value) => 
+      MapEntry(key, LatLng(value['lat'], value['lng'])));
+    
+    _cityVariations = Map<String, String>.from(data['city_variations']);
+  } catch (e) {
+    print('Error loading cities data: $e');
+    // Valeurs par défaut
+    _moroccanCities = {
+      'Casablanca': LatLng(33.5731, -7.5898),
+      'Rabat': LatLng(34.0209, -6.8416),
+    };
+    _cityVariations = {
+      'casablanca': 'Casablanca',
+      'casa': 'Casablanca',
+      'rabat': 'Rabat',
+    };
+  }
+}
   List<WeatherAlert> _checkForWeatherAlerts() {
     List<WeatherAlert> alerts = [];
 
@@ -963,7 +420,9 @@ class _WeatherRouteScreenState extends State<WeatherRouteScreen>
       vsync: this,
     )..repeat(reverse: true);
 
+   _loadCitiesData().then((_) {
     _initializeLocation();
+  });
   }
 
   @override
@@ -1027,6 +486,7 @@ class _WeatherRouteScreenState extends State<WeatherRouteScreen>
 
   Future<void> _initializeLocation() async {
     try {
+      await _loadCitiesData();
       await _getCurrentLocation();
       await _loadInitialWeatherData();
     } catch (e) {
@@ -1086,7 +546,8 @@ class _WeatherRouteScreenState extends State<WeatherRouteScreen>
     } catch (e) {
       print('Erreur géolocalisation: $e');
       setState(() {
-        _currentLocation = _moroccanCities['Casablanca'];
+        _currentLocation = _moroccanCities['Casablanca'] ?? 
+          LatLng(33.5731, -7.5898); // Fallback explicite
         _currentLocationName = "Casablanca, Maroc";
         _isLocationLoading = false;
       });
@@ -1609,6 +1070,7 @@ class _WeatherRouteScreenState extends State<WeatherRouteScreen>
   }
 
   Widget _buildMap() {
+     final fallbackLocation = LatLng(33.5731, -7.5898); // Casablanca par défaut
     return FlutterMap(
       mapController: _mapController,
       options: MapOptions(
