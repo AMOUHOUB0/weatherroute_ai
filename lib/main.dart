@@ -11,6 +11,11 @@ import 'package:fuzzywuzzy/fuzzywuzzy.dart';
 import 'alerts_page.dart';
 import 'recommendation_page.dart';
 import 'package:flutter/services.dart' show rootBundle;
+import 'package:speech_to_text/speech_to_text.dart' as stt;
+import 'package:permission_handler/permission_handler.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
+import 'dart:io' show Platform;
+import 'package:flutter_tts/flutter_tts.dart';
 
 void main() {
   runApp(WeatherRouteApp());
@@ -34,6 +39,46 @@ class WeatherRouteApp extends StatelessWidget {
   }
 }
 
+class TTSHelper {
+  static final FlutterTts _tts = FlutterTts();
+  static String _currentVoice = '';
+
+  static Future<void> init() async {
+    await _tts.setLanguage("fr-FR");
+    await _tts.setSpeechRate(0.5);
+    await _tts.setVolume(1.0);
+    await _tts.setPitch(1.0);
+    await _configureHighQualityVoice();
+  }
+  static Future<void> _configureHighQualityVoice() async {
+    if (Platform.isAndroid) {
+      // For Android - must use Map<String, String>
+      await _tts.setEngine("com.google.android.tts");
+      await _tts.setVoice({
+        "name": "fr-fr-x-vlf-network", 
+        "locale": "fr-FR"
+      });
+    } else if (Platform.isIOS) {
+      // For iOS - can use String
+   //   await _tts.setVoice("com.apple.ttsbundle.Amelie-premium");
+    }
+    
+    await _tts.setSpeechRate(0.45);
+    await _tts.setPitch(0.95);
+  }
+
+  static Future<void> speak(String text) async {
+    if (text.isNotEmpty) {
+      await _tts.awaitSpeakCompletion(true);
+      await _tts.speak(text);
+    }
+  }
+
+  static Future<void> stop() async {
+    await _tts.stop();
+  }
+}
+
 class WeatherAlert {
   final String type; // "temp", "rain", "storm", etc.
   final String message;
@@ -49,9 +94,6 @@ class WeatherAlert {
     required this.icon,
   });
 }
-
-
-
 
 class RouteWeatherPoint {
   final LatLng location;
@@ -108,16 +150,16 @@ class _WeatherRouteScreenState extends State<WeatherRouteScreen>
   final TextEditingController _searchController = TextEditingController();
   final Map<String, Map<String, dynamic>> _weatherCache = {};
 
- Map<String, LatLng> _moroccanCities = {
-  'Casablanca': LatLng(33.5731, -7.5898), // Valeurs par défaut
-  'Rabat': LatLng(34.0209, -6.8416),
-};
+  Map<String, LatLng> _moroccanCities = {
+    'Casablanca': LatLng(33.5731, -7.5898), // Valeurs par défaut
+    'Rabat': LatLng(34.0209, -6.8416),
+  };
 
-Map<String, String> _cityVariations = {
-  'casablanca': 'Casablanca', // Valeurs par défaut
-  'casa': 'Casablanca',
-  'rabat': 'Rabat',
-};
+  Map<String, String> _cityVariations = {
+    'casablanca': 'Casablanca', // Valeurs par défaut
+    'casa': 'Casablanca',
+    'rabat': 'Rabat',
+  };
   late AnimationController _loadingController;
   late AnimationController _pulseController;
   LatLng? _currentLocation;
@@ -126,11 +168,17 @@ Map<String, String> _cityVariations = {
   List<Marker> _weatherMarkers = [];
   List<RouteSegment> _routeSegments = [];
 
+  late FlutterTts _tts;
+  bool _isSpeaking = false;
+  Timer? _speechTimer;
+  bool get isMobile => !kIsWeb && (Platform.isAndroid || Platform.isIOS);
   bool _isLocationLoading = true;
   bool _isRouteCalculating = false;
   bool _hasActiveRoute = false;
   bool _showSearchBar = true;
-
+  late stt.SpeechToText _speech;
+  bool _isListening = false;
+  String _spokenText = '';
   String riskType = '';
   double riskLevel = 0.0;
   String recommendation = '';
@@ -138,57 +186,60 @@ Map<String, String> _cityVariations = {
   String _routeDuration = "";
   String _selectedDestination = "";
 
- 
-  
-String? findClosestCity(String userInput, List<String> cities) {
-  if (userInput.isEmpty) return null;
+  String? findClosestCity(String userInput, List<String> cities) {
+    if (userInput.isEmpty) return null;
 
-  final normalizedInput = userInput.toLowerCase().trim();
+    final normalizedInput = userInput.toLowerCase().trim();
 
- if (_cityVariations.containsKey(normalizedInput)) {
-    return _cityVariations[normalizedInput];
+    if (_cityVariations.containsKey(normalizedInput)) {
+      return _cityVariations[normalizedInput];
+    }
+
+    final exactMatch = _moroccanCities.keys.firstWhere(
+      (city) => city.toLowerCase() == normalizedInput,
+      orElse: () => '',
+    );
+
+    if (exactMatch.isNotEmpty) return exactMatch;
+
+    final bestMatch = extractTop(
+      query: normalizedInput,
+      choices: _moroccanCities.keys.toList(),
+      limit: 1,
+      cutoff: 60,
+    ).firstOrNull;
+
+    return (bestMatch != null && bestMatch.score >= 60)
+        ? bestMatch.choice
+        : null;
   }
 
-   final exactMatch = _moroccanCities.keys.firstWhere(
-    (city) => city.toLowerCase() == normalizedInput,
-    orElse: () => '',
-  );
+  Future<void> _loadCitiesData() async {
+    try {
+      final String response = await rootBundle.loadString('assets/cities.json');
+      final data = json.decode(response);
 
-  if (exactMatch.isNotEmpty) return exactMatch;
+      final cities = data['cities'] as Map<String, dynamic>;
+      _moroccanCities = cities.map(
+        (key, value) => MapEntry(key, LatLng(value['lat'], value['lng'])),
+      );
 
-   final bestMatch = extractTop(
-    query: normalizedInput,
-    choices: _moroccanCities.keys.toList(),
-    limit: 1,
-    cutoff: 60,
-  ).firstOrNull;
-
-  return (bestMatch != null && bestMatch.score >= 60) ? bestMatch.choice : null;
-}
-Future<void> _loadCitiesData() async {
-  try {
-    final String response = await rootBundle.loadString('assets/cities.json');
-    final data = json.decode(response);
-    
-    final cities = data['cities'] as Map<String, dynamic>;
-    _moroccanCities = cities.map((key, value) => 
-      MapEntry(key, LatLng(value['lat'], value['lng'])));
-    
-    _cityVariations = Map<String, String>.from(data['city_variations']);
-  } catch (e) {
-    print('Error loading cities data: $e');
-    // Valeurs par défaut
-    _moroccanCities = {
-      'Casablanca': LatLng(33.5731, -7.5898),
-      'Rabat': LatLng(34.0209, -6.8416),
-    };
-    _cityVariations = {
-      'casablanca': 'Casablanca',
-      'casa': 'Casablanca',
-      'rabat': 'Rabat',
-    };
+      _cityVariations = Map<String, String>.from(data['city_variations']);
+    } catch (e) {
+      print('Error loading cities data: $e');
+      // Valeurs par défaut
+      _moroccanCities = {
+        'Casablanca': LatLng(33.5731, -7.5898),
+        'Rabat': LatLng(34.0209, -6.8416),
+      };
+      _cityVariations = {
+        'casablanca': 'Casablanca',
+        'casa': 'Casablanca',
+        'rabat': 'Rabat',
+      };
+    }
   }
-}
+
   List<WeatherAlert> _checkForWeatherAlerts() {
     List<WeatherAlert> alerts = [];
 
@@ -257,6 +308,19 @@ Future<void> _loadCitiesData() async {
       context,
       MaterialPageRoute(builder: (context) => AlertsPage(alerts: alerts)),
     );
+    if (alerts.isNotEmpty) {
+      String alertMessage =
+          "Vous avez ${alerts.length} alerte${alerts.length > 1 ? 's' : ''}. ";
+      for (var alert in alerts) {
+        alertMessage += "${alert.message}. ";
+      }
+      _tts.speak(alertMessage);
+    }
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => AlertsPage(alerts: alerts)),
+    );
   }
 
   Widget _buildAlertsButton() {
@@ -278,7 +342,7 @@ Future<void> _loadCitiesData() async {
     required double windSpeed,
     required double rainIntensity,
   }) async {
-    final url = Uri.parse('http://192.168.0.113:5000/predict');
+    final url = Uri.parse('http://192.168.1.9:5000/predict');
 
     print('Envoi de la requête à: $url'); // Debug
     try {
@@ -405,11 +469,15 @@ Future<void> _loadCitiesData() async {
         _isRouteCalculating = false;
       });
     }
+    await _giveRouteSummary();
+    _startRouteGuidance();
   }
 
   @override
   void initState() {
     super.initState();
+    _tts = FlutterTts();
+    _initializeTTS();
     _loadingController = AnimationController(
       duration: Duration(seconds: 2),
       vsync: this,
@@ -419,10 +487,11 @@ Future<void> _loadCitiesData() async {
       duration: Duration(seconds: 1),
       vsync: this,
     )..repeat(reverse: true);
+    _speech = stt.SpeechToText();
 
-   _loadCitiesData().then((_) {
-    _initializeLocation();
-  });
+    _loadCitiesData().then((_) {
+      _initializeLocation();
+    });
   }
 
   @override
@@ -430,7 +499,29 @@ Future<void> _loadCitiesData() async {
     _loadingController.dispose();
     _pulseController.dispose();
     _searchController.dispose();
+    _stopRouteGuidance();
+    _tts.stop();
     super.dispose();
+  }
+
+  Future<void> _initializeTTS() async {
+    await _tts.setLanguage("fr-FR");
+    await _tts.setSpeechRate(1.0);
+    await _tts.setVolume(1.0);
+    await _tts.setPitch(1.0);
+
+    _tts.setStartHandler(() {
+      setState(() => _isSpeaking = true);
+    });
+
+    _tts.setCompletionHandler(() {
+      setState(() => _isSpeaking = false);
+    });
+
+    _tts.setErrorHandler((msg) {
+      setState(() => _isSpeaking = false);
+      print("TTS Error: $msg");
+    });
   }
 
   Future<Map<String, dynamic>> _fetchWeatherData(LatLng location) async {
@@ -500,6 +591,108 @@ Future<void> _loadCitiesData() async {
     }
   }
 
+  Future<void> _listen() async {
+    if (_isListening) {
+      await _speech.stop();
+      setState(() => _isListening = false);
+      return;
+    }
+
+    try {
+      // Vérifier la disponibilité et les permissions
+      bool available = await _speech.initialize(
+        onStatus: (status) => print('Status: $status'),
+        onError: (error) => print('Error: $error'),
+      );
+
+      if (!available) {
+        _showErrorSnackBar("La reconnaissance vocale n'est pas disponible");
+        return;
+      }
+
+      // Demander la permission sur mobile
+      if (isMobile) {
+        var status = await Permission.microphone.status;
+        if (!status.isGranted) {
+          status = await Permission.microphone.request();
+          if (!status.isGranted) {
+            _showPermissionDeniedMessage();
+            return;
+          }
+        }
+      }
+
+      // Démarrer l'écoute
+      setState(() => _isListening = true);
+      await _speech.listen(
+        onResult: (result) {
+          setState(() {
+            _spokenText = result.recognizedWords;
+            if (result.finalResult) {
+              _searchController.text = _spokenText;
+              _calculateRouteWeather(_spokenText);
+            }
+          });
+        },
+        listenFor: Duration(seconds: 30),
+        pauseFor: Duration(seconds: 5),
+        localeId: 'fr_FR',
+      );
+    } catch (e) {
+      setState(() => _isListening = false);
+      _showErrorSnackBar("Erreur: ${e.toString()}");
+    }
+  }
+
+  Future<void> _startListening() async {
+    setState(() => _isListening = true);
+    await _speech.listen(
+      onResult: (result) => setState(() {
+        _spokenText = result.recognizedWords;
+        if (result.finalResult) {
+          _processFinalResult(result.recognizedWords);
+        }
+      }),
+      listenFor: const Duration(seconds: 30),
+      pauseFor: const Duration(seconds: 5),
+      localeId: 'fr_FR', // Pour la reconnaissance en français
+    );
+  }
+
+  void _processFinalResult(String text) {
+    _searchController.text = text;
+    _calculateRouteWeather(text);
+    _stopListening();
+  }
+
+  void _stopListening() {
+    _speech.stop();
+    setState(() => _isListening = false);
+  }
+
+  void _handleSpeechStatus(String status) {
+    if (status == 'done' && _isListening) {
+      _stopListening();
+    }
+  }
+
+  void _handleSpeechError(dynamic error) {
+    _stopListening();
+    _showErrorSnackBar("Erreur de reconnaissance vocale: $error");
+  }
+
+  void _showPermissionDeniedMessage() {
+    _showErrorSnackBar(
+      "Permission microphone refusée. Activez-la dans les paramètres.",
+      action: SnackBarAction(
+        label: 'Paramètres',
+        onPressed: () => openAppSettings(),
+        textColor: Colors.white,
+      ),
+      duration: Duration(seconds: 4),
+    );
+  }
+
   Future<void> _getCurrentLocation() async {
     try {
       bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
@@ -546,12 +739,89 @@ Future<void> _loadCitiesData() async {
     } catch (e) {
       print('Erreur géolocalisation: $e');
       setState(() {
-        _currentLocation = _moroccanCities['Casablanca'] ?? 
-          LatLng(33.5731, -7.5898); // Fallback explicite
+        _currentLocation =
+            _moroccanCities['Casablanca'] ??
+            LatLng(33.5731, -7.5898); // Fallback explicite
         _currentLocationName = "Casablanca, Maroc";
         _isLocationLoading = false;
       });
     }
+  }
+
+  void _startRouteGuidance() {
+    if (_routeSegments.isEmpty) return;
+
+    // Arrêter tout guidage en cours
+    _stopRouteGuidance();
+
+    // Démarrer le timer pour les mises à jour vocales
+    _speechTimer = Timer.periodic(Duration(minutes: 5), (timer) {
+      _provideRouteUpdate();
+    });
+
+    // Donner le premier update immédiatement
+    _provideRouteUpdate();
+  }
+
+  void _stopRouteGuidance() {
+    _speechTimer?.cancel();
+    _speechTimer = null;
+    _tts.stop();
+  }
+
+  Future<void> _provideRouteUpdate() async {
+    if (_routeSegments.isEmpty) return;
+
+    // Construction du message vocal
+    String message = "Mise à jour de votre trajet vers $_selectedDestination. ";
+
+    // Info sur le segment actuel
+    final currentSegment = _routeSegments.first;
+    message += "Vous êtes sur ${currentSegment.segmentName}. ";
+    message +=
+        "Température: ${currentSegment.startWeather.temperature.toInt()} degrés. ";
+    message += "Conditions: ${currentSegment.startWeather.weatherCondition}. ";
+
+    // Alertes météo
+    final alerts = _checkForWeatherAlerts();
+    if (alerts.isNotEmpty) {
+      message += "Attention: ";
+      for (var alert in alerts.take(2)) {
+        message += "${alert.message}. ";
+      }
+    } else {
+      message += "Pas d'alertes météo. Bonne route!";
+    }
+
+    // Parler le message
+    await _tts.speak(message);
+  }
+
+  Future<void> _giveRouteSummary() async {
+    if (_routeSegments.isEmpty) return;
+
+    String message = "Résumé de votre trajet vers $_selectedDestination. ";
+    message += "Distance totale: $_routeDistance. ";
+    message += "Durée estimée: $_routeDuration. ";
+
+    // Conditions de départ
+    final start = _routeSegments.first.startWeather;
+    message +=
+        "Conditions de départ: ${start.weatherCondition}, ${start.temperature.toInt()} degrés. ";
+
+    // Conditions d'arrivée
+    final end = _routeSegments.last.endWeather;
+    message +=
+        "Conditions d'arrivée prévues: ${end.weatherCondition}, ${end.temperature.toInt()} degrés. ";
+
+    // Alertes
+    final alerts = _checkForWeatherAlerts();
+    if (alerts.isNotEmpty) {
+      message +=
+          "Alertes en cours: ${alerts.length}. Dites 'alertes' pour les écouter. ";
+    }
+
+    await _tts.speak(message);
   }
 
   Future<void> _loadInitialWeatherData() async {
@@ -780,7 +1050,49 @@ Future<void> _loadCitiesData() async {
       ),
     );
   }
+Future<void> _showVoiceSelection() async {
+  final voices = await _tts.getVoices;
+  final frenchVoices = voices.where((v) => v['locale'].contains('fr')).toList();
 
+  showModalBottomSheet(
+    context: context,
+    builder: (context) => Container(
+      padding: EdgeInsets.all(16),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text('Choisissez une voix', style: TextStyle(fontSize: 18)),
+          Divider(),
+          Expanded(
+            child: ListView.builder(
+              itemCount: frenchVoices.length,
+              itemBuilder: (context, index) {
+                final voice = frenchVoices[index];
+                return ListTile(
+                  title: Text(voice['name']),
+                  subtitle: Text(voice['locale']),
+                  onTap: () async {
+                    // Handle both Android and iOS cases
+                    if (Platform.isAndroid) {
+                      await _tts.setVoice({
+                        "name": voice['name'],
+                        "locale": voice['locale']
+                      });
+                    } else {
+                      await _tts.setVoice(voice['name']);
+                    }
+                    await _tts.speak('Voici le son de cette voix');
+                    Navigator.pop(context);
+                  },
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+}
   Future<List<LatLng>> _fetchRoutePoints(LatLng start, LatLng end) async {
     try {
       final response = await http
@@ -1002,6 +1314,7 @@ Future<void> _loadCitiesData() async {
 
   void _showErrorSnackBar(
     String message, {
+    SnackBarAction? action,
     Duration duration = const Duration(seconds: 3),
   }) {
     ScaffoldMessenger.of(context).showSnackBar(
@@ -1012,6 +1325,7 @@ Future<void> _loadCitiesData() async {
         margin: EdgeInsets.all(16),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
         duration: duration,
+        action: action, // Now properly accepts a SnackBarAction
       ),
     );
   }
@@ -1070,7 +1384,7 @@ Future<void> _loadCitiesData() async {
   }
 
   Widget _buildMap() {
-     final fallbackLocation = LatLng(33.5731, -7.5898); // Casablanca par défaut
+    final fallbackLocation = LatLng(33.5731, -7.5898); // Casablanca par défaut
     return FlutterMap(
       mapController: _mapController,
       options: MapOptions(
@@ -1176,67 +1490,100 @@ Future<void> _loadCitiesData() async {
     );
   }
 
-  Widget _buildSearchBar() {
-    return Positioned(
-      top: 120,
-      left: 16,
-      right: 16,
-      child: Container(
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.2),
-              blurRadius: 10,
-              offset: Offset(0, 2),
-            ),
-          ],
-        ),
-        child: TextField(
-          controller: _searchController,
-          decoration: InputDecoration(
-            hintText: 'Rechercher une destination...',
-            prefixIcon: Icon(Icons.search, color: Colors.grey[600]),
-            suffixIcon: _isRouteCalculating
-                ? Padding(
-                    padding: EdgeInsets.all(12),
-                    child: SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        valueColor: AlwaysStoppedAnimation<Color>(
-                          Color(0xFF00C853),
-                        ),
-                      ),
-                    ),
-                  )
-                : IconButton(
-                    icon: Icon(Icons.arrow_forward, color: Color(0xFF00C853)),
-                    onPressed: () {
-                      if (_searchController.text.isNotEmpty) {
-                        _calculateRouteWeather(_searchController.text);
-                      }
-                    },
-                  ),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide.none,
-            ),
-            filled: true,
-            fillColor: Colors.white,
-            contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+ Widget _buildSearchBar() {
+  return Positioned(
+    top: 120,
+    left: 16,
+    right: 16,
+    child: Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.2),
+            blurRadius: 10,
+            offset: Offset(0, 2),
           ),
-          onSubmitted: (value) {
-            if (value.isNotEmpty) {
-              _calculateRouteWeather(value);
-            }
-          },
-        ),
+        ],
       ),
-    );
-  }
+      child: Row(
+        children: [
+          Expanded(
+            child: TextField(
+              controller: _searchController,
+              decoration: InputDecoration(
+                hintText: 'Rechercher une destination...',
+                prefixIcon: Icon(Icons.search, color: Colors.grey[600]),
+                border: InputBorder.none,
+                contentPadding: EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 12,
+                ),
+              ),
+              onSubmitted: (value) {
+                if (value.isNotEmpty) {
+                  _calculateRouteWeather(value);
+                }
+              },
+            ),
+          ),
+          if (_isRouteCalculating)
+            Padding(
+              padding: EdgeInsets.all(12),
+              child: SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  valueColor: AlwaysStoppedAnimation<Color>(
+                    Color(0xFF00C853),
+                  ),
+                ),
+              ),
+            )
+          else
+            IconButton(
+              icon: Icon(
+                Icons.mic,
+                color: _isListening ? Colors.red : Color(0xFF00C853),
+              ),
+              onPressed: _listen,
+            ),
+          RawMaterialButton(
+            onPressed: () {
+              if (_isSpeaking) {
+                _stopRouteGuidance();
+              } else if (_hasActiveRoute) {
+                _startRouteGuidance();
+              }
+            },
+            elevation: 0,
+            hoverElevation: 0,
+            focusElevation: 0,
+            highlightElevation: 0,
+            fillColor: _isSpeaking ? Colors.red : Colors.white,
+            shape: CircleBorder(),
+            constraints: BoxConstraints.tightFor(width: 40, height: 40),
+            child: Icon(
+              _isSpeaking ? Icons.volume_off : Icons.volume_up,
+              color: const Color(0xFF6147F1),
+              size: 20,
+            ),
+          ),
+          IconButton(
+            icon: Icon(Icons.arrow_forward, color: Color(0xFF00C853)),
+            onPressed: () {
+              if (_searchController.text.isNotEmpty) {
+                _calculateRouteWeather(_searchController.text);
+              }
+            },
+          ),
+        ],
+      ),
+    ),
+  );
+}
 
   Widget _buildRouteInfo() {
     return Positioned(
