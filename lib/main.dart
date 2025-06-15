@@ -9,13 +9,21 @@ import 'package:geocoding/geocoding.dart';
 import 'dart:math' as math;
 import 'package:fuzzywuzzy/fuzzywuzzy.dart';
 import 'alerts_page.dart';
+import 'recommendation_page.dart';
+import 'package:flutter/services.dart' show rootBundle;
+import 'package:speech_to_text/speech_to_text.dart' as stt;
+import 'package:permission_handler/permission_handler.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
+import 'dart:io' show Platform;
+import 'package:flutter_tts/flutter_tts.dart';
 
 void main() {
   runApp(WeatherRouteApp());
 }
 
 const openWeatherApiKey = 'a08c63daf8a569834c3a9b1c069a33a5';
-const openRouteServiceApiKey = '5b3ce3597851110001cf6248d4eaa58434564f419b9b483bdb39a982';
+const openRouteServiceApiKey =
+    '5b3ce3597851110001cf6248d4eaa58434564f419b9b483bdb39a982';
 
 class WeatherRouteApp extends StatelessWidget {
   @override
@@ -30,6 +38,47 @@ class WeatherRouteApp extends StatelessWidget {
     );
   }
 }
+
+class TTSHelper {
+  static final FlutterTts _tts = FlutterTts();
+  static String _currentVoice = '';
+
+  static Future<void> init() async {
+    await _tts.setLanguage("fr-FR");
+    await _tts.setSpeechRate(0.5);
+    await _tts.setVolume(1.0);
+    await _tts.setPitch(1.0);
+    await _configureHighQualityVoice();
+  }
+  static Future<void> _configureHighQualityVoice() async {
+    if (Platform.isAndroid) {
+      // For Android - must use Map<String, String>
+      await _tts.setEngine("com.google.android.tts");
+      await _tts.setVoice({
+        "name": "fr-fr-x-vlf-network", 
+        "locale": "fr-FR"
+      });
+    } else if (Platform.isIOS) {
+      // For iOS - can use String
+   //   await _tts.setVoice("com.apple.ttsbundle.Amelie-premium");
+    }
+    
+    await _tts.setSpeechRate(0.45);
+    await _tts.setPitch(0.95);
+  }
+
+  static Future<void> speak(String text) async {
+    if (text.isNotEmpty) {
+      await _tts.awaitSpeakCompletion(true);
+      await _tts.speak(text);
+    }
+  }
+
+  static Future<void> stop() async {
+    await _tts.stop();
+  }
+}
+
 class WeatherAlert {
   final String type; // "temp", "rain", "storm", etc.
   final String message;
@@ -45,508 +94,6 @@ class WeatherAlert {
     required this.icon,
   });
 }
-final Map<String, String> _cityVariations = {
-  // Casablanca
-  'casablanca': 'Casablanca',
-  'casa': 'Casablanca',
-  'dar beida': 'Casablanca',
-  'dar el beida': 'Casablanca',
-  'casabianca': 'Casablanca',
-  'casabalnca': 'Casablanca',
-  'casablanca': 'Casablanca',
-  
-  // Rabat
-  'rabat': 'Rabat',
-  'rabatt': 'Rabat',
-  'rebat': 'Rabat',
-  'rabbat': 'Rabat',
-  
-  // Marrakech
-  'marrakech': 'Marrakech',
-  'marrakesh': 'Marrakech',
-  'marakech': 'Marrakech',
-  'marakesh': 'Marrakech',
-  'marakkech': 'Marrakech',
-  'marrakch': 'Marrakech',
-  'marrakec': 'Marrakech',
-  'marakeche': 'Marrakech',
-  'marakesch': 'Marrakech',
-  
-  // Fès
-  'fes': 'Fès',
-  'fez': 'Fès',
-  'fas': 'Fès',
-  'fass': 'Fès',
-  
-  // Tanger
-  'tanger': 'Tanger',
-  'tangier': 'Tanger',
-  'tangiers': 'Tanger',
-  'tanja': 'Tanger',
-  'tangere': 'Tanger',
-  'tanjer': 'Tanger',
-  
-  // Agadir
-  'agadir': 'Agadir',
-  'agadier': 'Agadir',
-  'agadire': 'Agadir',
-  'agader': 'Agadir',
-  
-  // Salé
-  'sale': 'Salé',
-  'salé': 'Salé',
-  'sala': 'Salé',
-  'salle': 'Salé',
-  
-  // Meknès
-  'meknes': 'Meknès',
-  'meknès': 'Meknès',
-  'meknas': 'Meknès',
-  'meknass': 'Meknès',
-  'mequinez': 'Meknès',
-  'mekinez': 'Meknès',
-  
-  // Oujda
-  'oujda': 'Oujda',
-  'oujeda': 'Oujda',
-  'wajda': 'Oujda',
-  'ujda': 'Oujda',
-  
-  // Kenitra
-  'kenitra': 'Kenitra',
-  'kenitra': 'Kenitra',
-  'kénitra': 'Kenitra',
-  'qenitra': 'Kenitra',
-  'port lyautey': 'Kenitra',
-  
-  // Tétouan
-  'tetouan': 'Tétouan',
-  'tétouan': 'Tétouan',
-  'tetuan': 'Tétouan',
-  'titwan': 'Tétouan',
-  'tetuoan': 'Tétouan',
-  
-  // Safi
-  'safi': 'Safi',
-  'saffi': 'Safi',
-  'asfi': 'Safi',
-  
-  // Mohammedia
-  'mohammedia': 'Mohammedia',
-  'mohamedia': 'Mohammedia',
-  'mohammadya': 'Mohammedia',
-  'fedala': 'Mohammedia',
-  
-  // Khouribga
-  'khouribga': 'Khouribga',
-  'khouribgha': 'Khouribga',
-  'khuribga': 'Khouribga',
-  'houribga': 'Khouribga',
-  
-  // El Jadida
-  'el jadida': 'El Jadida',
-  'eljadida': 'El Jadida',
-  'jadida': 'El Jadida',
-  'el-jadida': 'El Jadida',
-  'mazagan': 'El Jadida',
-  
-  // Beni Mellal
-  'beni mellal': 'Beni Mellal',
-  'benimellal': 'Beni Mellal',
-  'bni mellal': 'Beni Mellal',
-  
-  // Nador
-  'nador': 'Nador',
-  'nadur': 'Nador',
-  'nadir': 'Nador',
-  
-  // Taza
-  'taza': 'Taza',
-  'taza': 'Taza',
-  'teza': 'Taza',
-  
-  // Settat
-  'settat': 'Settat',
-  'setttat': 'Settat',
-  'setat': 'Settat',
-  
-  // Larache
-  'larache': 'Larache',
-  'el araish': 'Larache',
-  'elaraish': 'Larache',
-  'araish': 'Larache',
-  
-  // Ksar El Kebir
-  'ksar el kebir': 'Ksar El Kebir',
-  'ksar elkebir': 'Ksar El Kebir',
-  'ksarelkebir': 'Ksar El Kebir',
-  'alcazarquivir': 'Ksar El Kebir',
-  
-  // Khemisset
-  'khemisset': 'Khemisset',
-  'khémisset': 'Khemisset',
-  'khemiset': 'Khemisset',
-  'khmisset': 'Khemisset',
-  
-  // Guelmim
-  'guelmim': 'Guelmim',
-  'goulimine': 'Guelmim',
-  'guelmin': 'Guelmim',
-  'guellmim': 'Guelmim',
-  
-  // Berrechid
-  'berrechid': 'Berrechid',
-  'berrachid': 'Berrechid',
-  'brechid': 'Berrechid',
-  
-  // Oued Zem
-  'oued zem': 'Oued Zem',
-  'ouedzem': 'Oued Zem',
-  'wed zem': 'Oued Zem',
-  
-  // Taourirt
-  'taourirt': 'Taourirt',
-  'tawrirt': 'Taourirt',
-  'taourit': 'Taourirt',
-  
-  // Berkane
-  'berkane': 'Berkane',
-  'berkan': 'Berkane',
-  'barkane': 'Berkane',
-  
-  // Tiznit
-  'tiznit': 'Tiznit',
-  'tiznet': 'Tiznit',
-  'tizneet': 'Tiznit',
-  
-  // Tan-Tan
-  'tan-tan': 'Tan-Tan',
-  'tantan': 'Tan-Tan',
-  'tan tan': 'Tan-Tan',
-  
-  // Ouarzazate
-  'ouarzazate': 'Ouarzazate',
-  'warzazat': 'Ouarzazate',
-  'ouarzazat': 'Ouarzazate',
-  'warzazate': 'Ouarzazate',
-  'ourzazate': 'Ouarzazate',
-  
-  // Dakhla
-  'dakhla': 'Dakhla',
-  'dajla': 'Dakhla',
-  'dakla': 'Dakhla',
-  'villa cisneros': 'Dakhla',
-  
-  // Laayoune
-  'laayoune': 'Laayoune',
-  'layoune': 'Laayoune',
-  'el aaiun': 'Laayoune',
-  'el ayoun': 'Laayoune',
-  'aaiun': 'Laayoune',
-  
-  // Chefchaouen
-  'chefchaouen': 'Chefchaouen',
-  'chaouen': 'Chefchaouen',
-  'chef chaouen': 'Chefchaouen',
-  'chefchaoun': 'Chefchaouen',
-  'xauen': 'Chefchaouen',
-  'chaoun': 'Chefchaouen',
-  
-  // Essaouira
-  'essaouira': 'Essaouira',
-  'saouira': 'Essaouira',
-  'mogador': 'Essaouira',
-  'esaouira': 'Essaouira',
-  'essawira': 'Essaouira',
-  
-  // Ifrane
-  'ifrane': 'Ifrane',
-  'ifran': 'Ifrane',
-  'ifren': 'Ifrane',
-  
-  // Azrou
-  'azrou': 'Azrou',
-  'azru': 'Azrou',
-  'azroo': 'Azrou',
-  
-  // Midelt
-  'midelt': 'Midelt',
-  'midlet': 'Midelt',
-  'midalt': 'Midelt',
-  
-  // Errachidia
-  'errachidia': 'Errachidia',
-  'rachidia': 'Errachidia',
-  'rachidiya': 'Errachidia',
-  'ksar es souk': 'Errachidia',
-  
-  // Zagora
-  'zagora': 'Zagora',
-  'zagorra': 'Zagora',
-  'zagoura': 'Zagora',
-  
-  // Merzouga
-  'merzouga': 'Merzouga',
-  'merzuga': 'Merzouga',
-  'merzouga': 'Merzouga',
-  
-  // Tinghir
-  'tinghir': 'Tinghir',
-  'tineghir': 'Tinghir',
-  'tinerhir': 'Tinghir',
-  'tinrir': 'Tinghir',
-  
-  // Tafraoute
-  'tafraoute': 'Tafraoute',
-  'tafraout': 'Tafraoute',
-  'tafraut': 'Tafraoute',
-  
-  // Asilah
-  'asilah': 'Asilah',
-  'asila': 'Asilah',
-  'arcila': 'Asilah',
-  'arzila': 'Asilah',
-  
-  // Al Hoceima
-  'al hoceima': 'Al Hoceima',
-  'alhoceima': 'Al Hoceima',
-  'alhucemas': 'Al Hoceima',
-  'hoceima': 'Al Hoceima',
-  
-  // Martil
-  'martil': 'Martil',
-  'martiel': 'Martil',
-  'marteel': 'Martil',
-  
-  // Cabo Negro
-  'cabo negro': 'Cabo Negro',
-  'cabonegro': 'Cabo Negro',
-  'cap negro': 'Cabo Negro',
-  
-  // Mehdia
-  'mehdia': 'Mehdia',
-  'mehdya': 'Mehdia',
-  'medya': 'Mehdia',
-  
-  // Oualidia
-  'oualidia': 'Oualidia',
-  'walidia': 'Oualidia',
-  'oualidya': 'Oualidia',
-  
-  // Sidi Ifni
-  'sidi ifni': 'Sidi Ifni',
-  'sidiifni': 'Sidi Ifni',
-  'si ifni': 'Sidi Ifni',
-  
-  // Boulemane
-  'boulemane': 'Boulemane',
-  'boulman': 'Boulemane',
-  'boulmane': 'Boulemane',
-  
-  // Figuig
-  'figuig': 'Figuig',
-  'figig': 'Figuig',
-  'figuigue': 'Figuig',
-  
-  // Jerada
-  'jerada': 'Jerada',
-  'jrada': 'Jerada',
-  'jerrada': 'Jerada',
-  
-  // Sidi Slimane
-  'sidi slimane': 'Sidi Slimane',
-  'sidislimane': 'Sidi Slimane',
-  'si slimane': 'Sidi Slimane',
-  
-  // Sidi Kacem
-  'sidi kacem': 'Sidi Kacem',
-  'sidikacem': 'Sidi Kacem',
-  'si kacem': 'Sidi Kacem',
-  
-  // Youssoufia
-  'youssoufia': 'Youssoufia',
-  'yousoufia': 'Youssoufia',
-  'louis gentil': 'Youssoufia',
-  
-  // Skhirate
-  'skhirate': 'Skhirate',
-  'skhiratt': 'Skhirate',
-  'skirate': 'Skhirate',
-  
-  // Temara
-  'temara': 'Temara',
-  'tmara': 'Temara',
-  'témara': 'Temara',
-  
-  // Ain Harrouda
-  'ain harrouda': 'Ain Harrouda',
-  'ainharrouda': 'Ain Harrouda',
-  'ain harouda': 'Ain Harrouda',
-  
-  // Ben Guerir
-  'ben guerir': 'Ben Guerir',
-  'benguerir': 'Ben Guerir',
-  'ben grir': 'Ben Guerir',
-  
-  // Lieux emblématiques de Casablanca
-  'hassan ii mosque': 'Hassan II Mosque',
-  'hassan 2 mosque': 'Hassan II Mosque',
-  'mosquee hassan ii': 'Hassan II Mosque',
-  'mosquée hassan ii': 'Hassan II Mosque',
-  'mosquee hassan 2': 'Hassan II Mosque',
-  'grande mosquee': 'Hassan II Mosque',
-  
-  'quartier habous': 'Quartier Habous',
-  'habous': 'Quartier Habous',
-  'habous quarter': 'Quartier Habous',
-  'nouvelle medina': 'Quartier Habous',
-  
-  'place mohammed v': 'Place Mohammed V',
-  'place mohammed 5': 'Place Mohammed V',
-  'mohammed v square': 'Place Mohammed V',
-  'place moh v': 'Place Mohammed V',
-  
-  'cathedrale du sacre-coeur': 'Cathédrale du Sacré-Cœur',
-  'cathedrale': 'Cathédrale du Sacré-Cœur',
-  'sacred heart cathedral': 'Cathédrale du Sacré-Cœur',
-  'sacre coeur': 'Cathédrale du Sacré-Cœur',
-  
-  'marche central': 'Marché Central',
-  'marché central': 'Marché Central',
-  'central market': 'Marché Central',
-  'marche': 'Marché Central',
-  
-  'corniche ain diab': 'Corniche Ain Diab',
-  'corniche': 'Corniche Ain Diab',
-  'ain diab': 'Corniche Ain Diab',
-  'aindiab': 'Corniche Ain Diab',
-  
-  'twin center': 'Twin Center',
-  'twins center': 'Twin Center',
-  'twin centre': 'Twin Center',
-  'tours jumelles': 'Twin Center',
-  
-  'morocco mall': 'Morocco Mall',
-  'morocco mall': 'Morocco Mall',
-  'maroc mall': 'Morocco Mall',
-  
-  'ancienne medina': 'Ancienne Médina',
-  'ancienne médina': 'Ancienne Médina',
-  'old medina': 'Ancienne Médina',
-  'medina': 'Ancienne Médina',
-  'médina': 'Ancienne Médina',
-  
-  'port de casablanca': 'Port de Casablanca',
-  'port casa': 'Port de Casablanca',
-  'casablanca port': 'Port de Casablanca',
-  'port': 'Port de Casablanca',
-  
-  'parc de la ligue arabe': 'Parc de la Ligue Arabe',
-  'parc ligue arabe': 'Parc de la Ligue Arabe',
-  'ligue arabe': 'Parc de la Ligue Arabe',
-  'arab league park': 'Parc de la Ligue Arabe',
-  
-  'boulevard zerktouni': 'Boulevard Zerktouni',
-  'zerktouni': 'Boulevard Zerktouni',
-  'bd zerktouni': 'Boulevard Zerktouni',
-  
-  'quartier gauthier': 'Quartier Gauthier',
-  'gauthier': 'Quartier Gauthier',
-  'gauthier quarter': 'Quartier Gauthier',
-  
-  'anfa place': 'Anfa Place',
-  'anfa': 'Anfa Place',
-  'anfaplace': 'Anfa Place',
-  
-  'sidi abderrahman': 'Sidi Abderrahman',
-  'sidi abderrahmane': 'Sidi Abderrahman',
-  'si abderrahman': 'Sidi Abderrahman',
-  
-  'quartier maarif': 'Quartier Maarif',
-  'maarif': 'Quartier Maarif',
-  'maarif quarter': 'Quartier Maarif',
-  'ma3arif': 'Quartier Maarif',
-  
-  'technopark': 'Technopark',
-  'techno park': 'Technopark',
-  'techno parc': 'Technopark',
-  
-  'zenata': 'Zenata',
-  'zinata': 'Zenata',
-  'znata': 'Zenata',
-  
-  'stade mohammed v': 'Stade Mohammed V',
-  'stade mohammed 5': 'Stade Mohammed V',
-  'stadium mohammed v': 'Stade Mohammed V',
-  'complexe mohammed v': 'Stade Mohammed V',
-  
-  'villa des arts': 'Villa des Arts',
-  'villa arts': 'Villa des Arts',
-  'villa d arts': 'Villa des Arts',
-  
-  'quartier bourgogne': 'Quartier Bourgogne',
-  'bourgogne': 'Quartier Bourgogne',
-  
-  'quartier racine': 'Quartier Racine',
-  'racine': 'Quartier Racine',
-  
-  'quartier des hopitaux': 'Quartier des Hôpitaux',
-  'quartier des hôpitaux': 'Quartier des Hôpitaux',
-  'quartier hopitaux': 'Quartier des Hôpitaux',
-  'hopitaux': 'Quartier des Hôpitaux',
-  
-  'quartier palmier': 'Quartier Palmier',
-  'palmier': 'Quartier Palmier',
-  
-  'quartier oasis': 'Quartier Oasis',
-  'oasis': 'Quartier Oasis',
-  
-  'quartier californie': 'Quartier Californie',
-  'californie': 'Quartier Californie',
-  'california': 'Quartier Californie',
-  
-  'quartier beausejour': 'Quartier Beauséjour',
-  'quartier beauséjour': 'Quartier Beauséjour',
-  'beausejour': 'Quartier Beauséjour',
-  'beauséjour': 'Quartier Beauséjour',
-  
-  'quartier polo': 'Quartier Polo',
-  'polo': 'Quartier Polo',
-  
-  'quartier oulfa': 'Quartier Oulfa',
-  'oulfa': 'Quartier Oulfa',
-  'wlfa': 'Quartier Oulfa',
-  
-  'quartier hay mohammadi': 'Quartier Hay Mohammadi',
-  'hay mohammadi': 'Quartier Hay Mohammadi',
-  'haymohammadi': 'Quartier Hay Mohammadi',
-  'mohammadi': 'Quartier Hay Mohammadi',
-};
-String? findClosestCity(String userInput, List<String> cities) {
-  if (userInput.isEmpty) return null;
-  
-  final normalizedInput = userInput.toLowerCase().trim();
-  
-  if (_cityVariations.containsKey(normalizedInput)) {
-    return _cityVariations[normalizedInput];
-  }
-  
-  final exactMatch = cities.firstWhere(
-    (city) => city.toLowerCase() == normalizedInput,
-    orElse: () => '',
-  );
-  
-  if (exactMatch.isNotEmpty) return exactMatch;
-
-  final bestMatch = extractTop(
-    query: normalizedInput,
-    choices: cities,
-    limit: 1,
-    cutoff: 60,
-  ).firstOrNull;
-
-  return (bestMatch != null && bestMatch.score >= 60) ? bestMatch.choice : null;
-}
 
 class RouteWeatherPoint {
   final LatLng location;
@@ -557,6 +104,7 @@ class RouteWeatherPoint {
   final String cityName;
   final double humidity;
   final double windSpeed;
+  final double rainIntensity;
 
   RouteWeatherPoint({
     required this.location,
@@ -567,6 +115,7 @@ class RouteWeatherPoint {
     required this.cityName,
     required this.humidity,
     required this.windSpeed,
+    required this.rainIntensity,
   });
 }
 
@@ -591,17 +140,26 @@ class RouteSegment {
 }
 
 class WeatherRouteScreen extends StatefulWidget {
-  
   @override
   _WeatherRouteScreenState createState() => _WeatherRouteScreenState();
 }
 
-class _WeatherRouteScreenState extends State<WeatherRouteScreen> 
+class _WeatherRouteScreenState extends State<WeatherRouteScreen>
     with TickerProviderStateMixin {
   final MapController _mapController = MapController();
   final TextEditingController _searchController = TextEditingController();
   final Map<String, Map<String, dynamic>> _weatherCache = {};
 
+  Map<String, LatLng> _moroccanCities = {
+    'Casablanca': LatLng(33.5731, -7.5898), // Valeurs par défaut
+    'Rabat': LatLng(34.0209, -6.8416),
+  };
+
+  Map<String, String> _cityVariations = {
+    'casablanca': 'Casablanca', // Valeurs par défaut
+    'casa': 'Casablanca',
+    'rabat': 'Rabat',
+  };
   late AnimationController _loadingController;
   late AnimationController _pulseController;
   LatLng? _currentLocation;
@@ -610,280 +168,330 @@ class _WeatherRouteScreenState extends State<WeatherRouteScreen>
   List<Marker> _weatherMarkers = [];
   List<RouteSegment> _routeSegments = [];
 
+  late FlutterTts _tts;
+  bool _isSpeaking = false;
+  Timer? _speechTimer;
+  bool get isMobile => !kIsWeb && (Platform.isAndroid || Platform.isIOS);
   bool _isLocationLoading = true;
   bool _isRouteCalculating = false;
   bool _hasActiveRoute = false;
   bool _showSearchBar = true;
-
+  late stt.SpeechToText _speech;
+  bool _isListening = false;
+  String _spokenText = '';
+  String riskType = '';
+  double riskLevel = 0.0;
+  String recommendation = '';
   String _routeDistance = "";
   String _routeDuration = "";
   String _selectedDestination = "";
 
-  final Map<String, LatLng> _moroccanCities = {
-  // Grandes métropoles
-  'Casablanca': LatLng(33.5731, -7.5898),
-  'Rabat': LatLng(34.0209, -6.8416),
-  'Marrakech': LatLng(31.6295, -7.9811),
-  'Fès': LatLng(34.0181, -5.0078),
-  'Tanger': LatLng(35.7595, -5.8340),
-  'Agadir': LatLng(30.4278, -9.5981),
-  
-  // Villes importantes
-  'Salé': LatLng(34.0531, -6.7985),
-  'Meknès': LatLng(33.8935, -5.5473),
-  'Oujda': LatLng(34.6814, -1.9086),
-  'Kenitra': LatLng(34.2610, -6.5802),
-  'Tétouan': LatLng(35.5889, -5.3626),
-  'Safi': LatLng(32.2994, -9.2372),
-  'Mohammedia': LatLng(33.6861, -7.3826),
-  'Khouribga': LatLng(32.8811, -6.9063),
-  'El Jadida': LatLng(33.2316, -8.5007),
-  'Beni Mellal': LatLng(32.3373, -6.3498),
-  'Nador': LatLng(35.1681, -2.9287),
-  'Taza': LatLng(34.2133, -4.0103),
-  
-  // Villes moyennes
-  'Settat': LatLng(33.0018, -7.6160),
-  'Larache': LatLng(35.1932, -6.1563),
-  'Ksar El Kebir': LatLng(35.0017, -5.9090),
-  'Khemisset': LatLng(33.8244, -6.0691),
-  'Guelmim': LatLng(28.9870, -10.0574),
-  'Berrechid': LatLng(33.2655, -7.5877),
-  'Oued Zem': LatLng(32.8634, -6.5735),
-  'Taourirt': LatLng(34.4092, -2.8953),
-  'Berkane': LatLng(34.9252, -2.3220),
-  'Tiznit': LatLng(29.6974, -9.7316),
-  'Tan-Tan': LatLng(28.4378, -11.1036),
-  'Ouarzazate': LatLng(30.9335, -6.9370),
-  'Dakhla': LatLng(23.7185, -15.9582),
-  'Laayoune': LatLng(27.1253, -13.1625),
-  
-  // Villes touristiques et historiques
-  'Chefchaouen': LatLng(35.1688, -5.2636),
-  'Essaouira': LatLng(31.5084, -9.7595),
-  'Ifrane': LatLng(33.5228, -5.1106),
-  'Azrou': LatLng(33.4345, -5.2110),
-  'Midelt': LatLng(32.6852, -4.7345),
-  'Errachidia': LatLng(31.9314, -4.4244),
-  'Zagora': LatLng(30.3276, -5.8368),
-  'Merzouga': LatLng(31.0801, -4.0135),
-  'Tinghir': LatLng(31.5145, -5.5331),
-  'Tafraoute': LatLng(29.7252, -8.9739),
-  
-  // Villes côtières
-  'Asilah': LatLng(35.4656, -6.0353),
-  'Al Hoceima': LatLng(35.2517, -3.9372),
-  'Martil': LatLng(35.6178, -5.2756),
-  'Cabo Negro': LatLng(35.6889, -5.2944),
-  'Mehdia': LatLng(34.2542, -6.6436),
-  'Oualidia': LatLng(32.7364, -9.0306),
-  'Sidi Ifni': LatLng(29.3797, -10.1731),
-  
-  // Autres villes importantes
-  'Boulemane': LatLng(33.3623, -4.7288),
-  'Figuig': LatLng(32.1091, -1.2255),
-  'Jerada': LatLng(34.3142, -2.1625),
-  'Sidi Slimane': LatLng(34.2654, -5.9263),
-  'Sidi Kacem': LatLng(34.2214, -5.7081),
-  'Youssoufia': LatLng(32.2465, -8.5311),
-  'Skhirate': LatLng(33.8569, -7.0403),
-  'Temara': LatLng(33.9289, -6.9067),
-  'Ain Harrouda': LatLng(33.6380, -7.2580),
-  'Ben Guerir': LatLng(32.2362, -7.9541),
-  
-  // Lieux emblématiques de Casablanca
-  'Hassan II Mosque': LatLng(33.6080, -7.6327),
-  'Quartier Habous': LatLng(33.5845, -7.6103),
-  'Place Mohammed V': LatLng(33.5928, -7.6192),
-  'Cathédrale du Sacré-Cœur': LatLng(33.5956, -7.6212),
-  'Marché Central': LatLng(33.5943, -7.6167),
-  'Corniche Ain Diab': LatLng(33.5518, -7.6615),
-  'Twin Center': LatLng(33.5911, -7.6261),
-  'Morocco Mall': LatLng(33.5464, -7.6686),
-  'Ancienne Médina': LatLng(33.5970, -7.6151),
-  'Port de Casablanca': LatLng(33.6061, -7.6183),
-  'Parc de la Ligue Arabe': LatLng(33.5867, -7.6353),
-  'Boulevard Zerktouni': LatLng(33.5877, -7.6242),
-  'Quartier Gauthier': LatLng(33.5910, -7.6230),
-  'Anfa Place': LatLng(33.5738, -7.6410),
-  'Sidi Abderrahman': LatLng(33.5371, -7.6898),
-  'Quartier Maarif': LatLng(33.5836, -7.6198),
-  'Technopark': LatLng(33.5202, -7.6600),
-  'Zenata': LatLng(33.6425, -7.4892),
-  'Stade Mohammed V': LatLng(33.5267, -7.6591),
-  'Villa des Arts': LatLng(33.5889, -7.6403),
-  'Quartier Bourgogne': LatLng(33.5756, -7.6456),
-  'Quartier Racine': LatLng(33.5694, -7.6523),
-  'Quartier des Hôpitaux': LatLng(33.5799, -7.6442),
-  'Quartier Palmier': LatLng(33.5833, -7.6389),
-  'Quartier Oasis': LatLng(33.5500, -7.6800),
-  'Quartier Californie': LatLng(33.5600, -7.6650),
-  'Quartier Beauséjour': LatLng(33.5722, -7.6500),
-  'Quartier Polo': LatLng(33.5650, -7.6400),
-  'Quartier Oulfa': LatLng(33.5550, -7.5900),
-  'Quartier Hay Mohammadi': LatLng(33.5450, -7.5500),
-};
+  String? findClosestCity(String userInput, List<String> cities) {
+    if (userInput.isEmpty) return null;
 
-List<WeatherAlert> _checkForWeatherAlerts() {
+    final normalizedInput = userInput.toLowerCase().trim();
+
+    if (_cityVariations.containsKey(normalizedInput)) {
+      return _cityVariations[normalizedInput];
+    }
+
+    final exactMatch = _moroccanCities.keys.firstWhere(
+      (city) => city.toLowerCase() == normalizedInput,
+      orElse: () => '',
+    );
+
+    if (exactMatch.isNotEmpty) return exactMatch;
+
+    final bestMatch = extractTop(
+      query: normalizedInput,
+      choices: _moroccanCities.keys.toList(),
+      limit: 1,
+      cutoff: 60,
+    ).firstOrNull;
+
+    return (bestMatch != null && bestMatch.score >= 60)
+        ? bestMatch.choice
+        : null;
+  }
+
+  Future<void> _loadCitiesData() async {
+    try {
+      final String response = await rootBundle.loadString('assets/cities.json');
+      final data = json.decode(response);
+
+      final cities = data['cities'] as Map<String, dynamic>;
+      _moroccanCities = cities.map(
+        (key, value) => MapEntry(key, LatLng(value['lat'], value['lng'])),
+      );
+
+      _cityVariations = Map<String, String>.from(data['city_variations']);
+    } catch (e) {
+      print('Error loading cities data: $e');
+      // Valeurs par défaut
+      _moroccanCities = {
+        'Casablanca': LatLng(33.5731, -7.5898),
+        'Rabat': LatLng(34.0209, -6.8416),
+      };
+      _cityVariations = {
+        'casablanca': 'Casablanca',
+        'casa': 'Casablanca',
+        'rabat': 'Rabat',
+      };
+    }
+  }
+
+  List<WeatherAlert> _checkForWeatherAlerts() {
     List<WeatherAlert> alerts = [];
 
     for (var segment in _routeSegments) {
-      if (segment.startWeather.temperature > 35 || segment.endWeather.temperature > 35) {
-        alerts.add(WeatherAlert(
-          type: "temp",
-          message: "Température élevée (${segment.startWeather.temperature.toInt()}°C) sur ${segment.segmentName}",
-          segment: segment.segmentName,
-          color: Colors.orange,
-          icon: Icons.warning,
-        ));
+      if (segment.startWeather.temperature > 35 ||
+          segment.endWeather.temperature > 35) {
+        alerts.add(
+          WeatherAlert(
+            type: "temp",
+            message:
+                "Température élevée (${segment.startWeather.temperature.toInt()}°C) sur ${segment.segmentName}",
+            segment: segment.segmentName,
+            color: Colors.orange,
+            icon: Icons.warning,
+          ),
+        );
       }
 
-      if (segment.startWeather.weatherCondition.contains('orage') || 
+      if (segment.startWeather.weatherCondition.contains('orage') ||
           segment.endWeather.weatherCondition.contains('orage')) {
-        alerts.add(WeatherAlert(
-          type: "storm",
-          message: "Orages prévus sur ${segment.segmentName}",
-          segment: segment.segmentName,
-          color: Colors.deepPurple,
-          icon: Icons.thunderstorm,
-        ));
+        alerts.add(
+          WeatherAlert(
+            type: "storm",
+            message: "Orages prévus sur ${segment.segmentName}",
+            segment: segment.segmentName,
+            color: Colors.deepPurple,
+            icon: Icons.thunderstorm,
+          ),
+        );
       }
 
-      if (segment.startWeather.weatherCondition.contains('pluie forte') || 
+      if (segment.startWeather.weatherCondition.contains('pluie forte') ||
           segment.endWeather.weatherCondition.contains('pluie forte')) {
-        alerts.add(WeatherAlert(
-          type: "rain",
-          message: "Pluie forte sur ${segment.segmentName}",
-          segment: segment.segmentName,
-          color: Colors.blue,
-          icon: Icons.water_drop,
-        ));
+        alerts.add(
+          WeatherAlert(
+            type: "rain",
+            message: "Pluie forte sur ${segment.segmentName}",
+            segment: segment.segmentName,
+            color: Colors.blue,
+            icon: Icons.water_drop,
+          ),
+        );
       }
 
-      if (segment.startWeather.windSpeed > 30 || segment.endWeather.windSpeed > 30) {
-        alerts.add(WeatherAlert(
-          type: "wind",
-          message: "Vent fort (${segment.startWeather.windSpeed.toInt()} km/h) sur ${segment.segmentName}",
-          segment: segment.segmentName,
-          color: Colors.green,
-          icon: Icons.air,
-        ));
+      if (segment.startWeather.windSpeed > 30 ||
+          segment.endWeather.windSpeed > 30) {
+        alerts.add(
+          WeatherAlert(
+            type: "wind",
+            message:
+                "Vent fort (${segment.startWeather.windSpeed.toInt()} km/h) sur ${segment.segmentName}",
+            segment: segment.segmentName,
+            color: Colors.green,
+            icon: Icons.air,
+          ),
+        );
       }
     }
 
     return alerts;
   }
 
- void _navigateToAlertsPage() {
+  void _navigateToAlertsPage() {
     final alerts = _checkForWeatherAlerts();
     Navigator.push(
       context,
-      MaterialPageRoute(
-        builder: (context) => AlertsPage(alerts: alerts),
-      ),
+      MaterialPageRoute(builder: (context) => AlertsPage(alerts: alerts)),
     );
-  }
-
- Widget _buildAlertsButton() {
-    return Positioned(
-      bottom: 200,
-      right: 16,
-      child: FloatingActionButton(
-        onPressed: _navigateToAlertsPage,
-        backgroundColor: Colors.orange,
-        mini: true,
-        child: Badge(
-          isLabelVisible: _checkForWeatherAlerts().isNotEmpty,
-          label: Text(_checkForWeatherAlerts().length.toString()),
-          child: Icon(Icons.notifications_active, color: Colors.white),
-        ),
-      ),
-    );
-  }
-Future<void> _proceedWithRouteCalculation(String displayName, LatLng destinationCoords) async {
-  if (_currentLocation == null) return;
-
-  setState(() {
-    _isRouteCalculating = true;
-    _selectedDestination = displayName;
-    _showSearchBar = false;
-  });
-
-  try {
-    final routePoints = await _fetchRoutePoints(
-      _currentLocation!,
-      destinationCoords,
-    );
-    
-    await _calculateRouteSegments(routePoints);
-
-    double totalDistance = 0;
-    for (var segment in _routeSegments) {
-      totalDistance += segment.distance;
+    if (alerts.isNotEmpty) {
+      String alertMessage =
+          "Vous avez ${alerts.length} alerte${alerts.length > 1 ? 's' : ''}. ";
+      for (var alert in alerts) {
+        alertMessage += "${alert.message}. ";
+      }
+      _tts.speak(alertMessage);
     }
 
-    _routeDistance = "${totalDistance.toStringAsFixed(0)} km";
-    _routeDuration = "${(totalDistance / 80 * 60).toStringAsFixed(0)} min";
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => AlertsPage(alerts: alerts)),
+    );
+  }
 
-    List<Marker> routeMarkers = [];
-    for (var segment in _routeSegments) {
-      routeMarkers.add(
-        Marker(
-          point: segment.startPoint,
-          width: 60,
-          height: 60,
-          child: _buildRouteWeatherMarker(segment.startWeather),
-        ),
-      );
+  Widget _buildAlertsButton() {
+    return FloatingActionButton(
+      onPressed: _navigateToAlertsPage,
+      backgroundColor: Colors.orange,
+      mini: true,
+      child: Badge(
+        isLabelVisible: _checkForWeatherAlerts().isNotEmpty,
+        label: Text(_checkForWeatherAlerts().length.toString()),
+        child: Icon(Icons.notifications_active, color: Colors.white),
+      ),
+    );
+  }
 
-      if (segment == _routeSegments.last) {
-        routeMarkers.add(
-          Marker(
-            point: segment.endPoint,
-            width: 60,
-            height: 60,
-            child: _buildRouteWeatherMarker(segment.endWeather),
+  Future<void> _getRecommendationFromAPI({
+    required double temperature,
+    required double humidity,
+    required double windSpeed,
+    required double rainIntensity,
+  }) async {
+    final url = Uri.parse('http://192.168.1.9:5000/predict');
+
+    print('Envoi de la requête à: $url'); // Debug
+    try {
+      final response = await http
+          .post(
+            url,
+            headers: {
+              "Content-Type": "application/json",
+              "Accept": "application/json",
+            },
+            body: jsonEncode({
+              "temperature": temperature,
+              "humidity": humidity,
+              "wind_speed": windSpeed,
+              "rain_intensity": rainIntensity,
+            }),
+          )
+          .timeout(Duration(seconds: 5));
+
+      print('Réponse reçue: ${response.statusCode}'); // Debug
+      print('Corps de la réponse: ${response.body}'); // Debug
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        final type = data['risk_type'];
+        final level = data['risk_level'];
+        final rec = data['recommendation'];
+
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => RecommendationPage(
+              riskType: type,
+              riskLevel: double.tryParse(level.toString()) ?? 0.0,
+              recommendation: rec,
+            ),
           ),
         );
+      } else {
+        print("Erreur API : ${response.statusCode}");
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Erreur API: ${response.statusCode}")),
+        );
       }
+    } catch (e) {
+      print("Erreur connexion API : $e");
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text("Erreur de connexion: $e")));
     }
-
-    Polyline routeLine = Polyline(
-      points: routePoints,
-      color: Color(0xFF00C853),
-      strokeWidth: 4.0,
-    );
-
-    setState(() {
-      _routeLines = [routeLine];
-      _weatherMarkers = routeMarkers;
-      _hasActiveRoute = true;
-    });
-
-    _fitMapToRoute(_currentLocation!, destinationCoords);
-  } catch (e) {
-    print('Erreur calcul route: $e');
-    _showErrorSnackBar("Erreur lors du calcul de l'itinéraire. Veuillez réessayer.");
-  } finally {
-    setState(() {
-      _isRouteCalculating = false;
-    });
   }
-}
+
+  Future<void> _proceedWithRouteCalculation(
+    String displayName,
+    LatLng destinationCoords,
+  ) async {
+    if (_currentLocation == null) return;
+
+    setState(() {
+      _isRouteCalculating = true;
+      _selectedDestination = displayName;
+      _showSearchBar = false;
+    });
+
+    try {
+      final routePoints = await _fetchRoutePoints(
+        _currentLocation!,
+        destinationCoords,
+      );
+
+      await _calculateRouteSegments(routePoints);
+
+      double totalDistance = 0;
+      for (var segment in _routeSegments) {
+        totalDistance += segment.distance;
+      }
+
+      _routeDistance = "${totalDistance.toStringAsFixed(0)} km";
+      _routeDuration = "${(totalDistance / 80 * 60).toStringAsFixed(0)} min";
+
+      List<Marker> routeMarkers = [];
+      for (var segment in _routeSegments) {
+        routeMarkers.add(
+          Marker(
+            point: segment.startPoint,
+            width: 60,
+            height: 60,
+            child: _buildRouteWeatherMarker(segment.startWeather),
+          ),
+        );
+
+        if (segment == _routeSegments.last) {
+          routeMarkers.add(
+            Marker(
+              point: segment.endPoint,
+              width: 60,
+              height: 60,
+              child: _buildRouteWeatherMarker(segment.endWeather),
+            ),
+          );
+        }
+      }
+
+      Polyline routeLine = Polyline(
+        points: routePoints,
+        color: Color(0xFF00C853),
+        strokeWidth: 4.0,
+      );
+
+      setState(() {
+        _routeLines = [routeLine];
+        _weatherMarkers = routeMarkers;
+        _hasActiveRoute = true;
+      });
+
+      _fitMapToRoute(_currentLocation!, destinationCoords);
+    } catch (e) {
+      print('Erreur calcul route: $e');
+      _showErrorSnackBar(
+        "Erreur lors du calcul de l'itinéraire. Veuillez réessayer.",
+      );
+    } finally {
+      setState(() {
+        _isRouteCalculating = false;
+      });
+    }
+    await _giveRouteSummary();
+    _startRouteGuidance();
+  }
+
   @override
   void initState() {
     super.initState();
+    _tts = FlutterTts();
+    _initializeTTS();
     _loadingController = AnimationController(
       duration: Duration(seconds: 2),
       vsync: this,
     )..repeat();
-    
+
     _pulseController = AnimationController(
       duration: Duration(seconds: 1),
       vsync: this,
     )..repeat(reverse: true);
+    _speech = stt.SpeechToText();
 
-    _initializeLocation();
+    _loadCitiesData().then((_) {
+      _initializeLocation();
+    });
   }
 
   @override
@@ -891,24 +499,48 @@ Future<void> _proceedWithRouteCalculation(String displayName, LatLng destination
     _loadingController.dispose();
     _pulseController.dispose();
     _searchController.dispose();
+    _stopRouteGuidance();
+    _tts.stop();
     super.dispose();
+  }
+
+  Future<void> _initializeTTS() async {
+    await _tts.setLanguage("fr-FR");
+    await _tts.setSpeechRate(1.0);
+    await _tts.setVolume(1.0);
+    await _tts.setPitch(1.0);
+
+    _tts.setStartHandler(() {
+      setState(() => _isSpeaking = true);
+    });
+
+    _tts.setCompletionHandler(() {
+      setState(() => _isSpeaking = false);
+    });
+
+    _tts.setErrorHandler((msg) {
+      setState(() => _isSpeaking = false);
+      print("TTS Error: $msg");
+    });
   }
 
   Future<Map<String, dynamic>> _fetchWeatherData(LatLng location) async {
     final cacheKey = '${location.latitude},${location.longitude}';
-    
+
     if (_weatherCache.containsKey(cacheKey)) {
       return _weatherCache[cacheKey]!;
     }
 
     try {
-      final response = await http.get(
-        Uri.parse(
-          'https://api.openweathermap.org/data/2.5/weather?'
-          'lat=${location.latitude}&lon=${location.longitude}'
-          '&appid=$openWeatherApiKey&units=metric&lang=fr',
-        ),
-      ).timeout(Duration(seconds: 5));
+      final response = await http
+          .get(
+            Uri.parse(
+              'https://api.openweathermap.org/data/2.5/weather?'
+              'lat=${location.latitude}&lon=${location.longitude}'
+              '&appid=$openWeatherApiKey&units=metric&lang=fr',
+            ),
+          )
+          .timeout(Duration(seconds: 5));
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
@@ -917,6 +549,7 @@ Future<void> _proceedWithRouteCalculation(String displayName, LatLng destination
           'condition': data['weather'][0]['description'],
           'humidity': data['main']['humidity'].toDouble(),
           'windSpeed': data['wind']['speed'].toDouble(),
+          'rainIntensity': data['rain']?['1h'] ?? 0.0,
         };
         _weatherCache[cacheKey] = weatherData;
         return weatherData;
@@ -927,6 +560,7 @@ Future<void> _proceedWithRouteCalculation(String displayName, LatLng destination
           'condition': 'partiellement nuageux',
           'humidity': 50.0,
           'windSpeed': 10.0,
+          'rainIntensity': 0.0,
         };
       }
     } catch (e) {
@@ -943,6 +577,7 @@ Future<void> _proceedWithRouteCalculation(String displayName, LatLng destination
 
   Future<void> _initializeLocation() async {
     try {
+      await _loadCitiesData();
       await _getCurrentLocation();
       await _loadInitialWeatherData();
     } catch (e) {
@@ -954,6 +589,108 @@ Future<void> _proceedWithRouteCalculation(String displayName, LatLng destination
       });
       await _loadInitialWeatherData();
     }
+  }
+
+  Future<void> _listen() async {
+    if (_isListening) {
+      await _speech.stop();
+      setState(() => _isListening = false);
+      return;
+    }
+
+    try {
+      // Vérifier la disponibilité et les permissions
+      bool available = await _speech.initialize(
+        onStatus: (status) => print('Status: $status'),
+        onError: (error) => print('Error: $error'),
+      );
+
+      if (!available) {
+        _showErrorSnackBar("La reconnaissance vocale n'est pas disponible");
+        return;
+      }
+
+      // Demander la permission sur mobile
+      if (isMobile) {
+        var status = await Permission.microphone.status;
+        if (!status.isGranted) {
+          status = await Permission.microphone.request();
+          if (!status.isGranted) {
+            _showPermissionDeniedMessage();
+            return;
+          }
+        }
+      }
+
+      // Démarrer l'écoute
+      setState(() => _isListening = true);
+      await _speech.listen(
+        onResult: (result) {
+          setState(() {
+            _spokenText = result.recognizedWords;
+            if (result.finalResult) {
+              _searchController.text = _spokenText;
+              _calculateRouteWeather(_spokenText);
+            }
+          });
+        },
+        listenFor: Duration(seconds: 30),
+        pauseFor: Duration(seconds: 5),
+        localeId: 'fr_FR',
+      );
+    } catch (e) {
+      setState(() => _isListening = false);
+      _showErrorSnackBar("Erreur: ${e.toString()}");
+    }
+  }
+
+  Future<void> _startListening() async {
+    setState(() => _isListening = true);
+    await _speech.listen(
+      onResult: (result) => setState(() {
+        _spokenText = result.recognizedWords;
+        if (result.finalResult) {
+          _processFinalResult(result.recognizedWords);
+        }
+      }),
+      listenFor: const Duration(seconds: 30),
+      pauseFor: const Duration(seconds: 5),
+      localeId: 'fr_FR', // Pour la reconnaissance en français
+    );
+  }
+
+  void _processFinalResult(String text) {
+    _searchController.text = text;
+    _calculateRouteWeather(text);
+    _stopListening();
+  }
+
+  void _stopListening() {
+    _speech.stop();
+    setState(() => _isListening = false);
+  }
+
+  void _handleSpeechStatus(String status) {
+    if (status == 'done' && _isListening) {
+      _stopListening();
+    }
+  }
+
+  void _handleSpeechError(dynamic error) {
+    _stopListening();
+    _showErrorSnackBar("Erreur de reconnaissance vocale: $error");
+  }
+
+  void _showPermissionDeniedMessage() {
+    _showErrorSnackBar(
+      "Permission microphone refusée. Activez-la dans les paramètres.",
+      action: SnackBarAction(
+        label: 'Paramètres',
+        onPressed: () => openAppSettings(),
+        textColor: Colors.white,
+      ),
+      duration: Duration(seconds: 4),
+    );
   }
 
   Future<void> _getCurrentLocation() async {
@@ -988,7 +725,8 @@ Future<void> _proceedWithRouteCalculation(String displayName, LatLng destination
 
       String locationName = "Position actuelle";
       if (placemarks.isNotEmpty) {
-        locationName = "${placemarks[0].locality ?? 'Position actuelle'}, Maroc";
+        locationName =
+            "${placemarks[0].locality ?? 'Position actuelle'}, Maroc";
       }
 
       setState(() {
@@ -1001,16 +739,94 @@ Future<void> _proceedWithRouteCalculation(String displayName, LatLng destination
     } catch (e) {
       print('Erreur géolocalisation: $e');
       setState(() {
-        _currentLocation = _moroccanCities['Casablanca'];
+        _currentLocation =
+            _moroccanCities['Casablanca'] ??
+            LatLng(33.5731, -7.5898); // Fallback explicite
         _currentLocationName = "Casablanca, Maroc";
         _isLocationLoading = false;
       });
     }
   }
 
+  void _startRouteGuidance() {
+    if (_routeSegments.isEmpty) return;
+
+    // Arrêter tout guidage en cours
+    _stopRouteGuidance();
+
+    // Démarrer le timer pour les mises à jour vocales
+    _speechTimer = Timer.periodic(Duration(minutes: 5), (timer) {
+      _provideRouteUpdate();
+    });
+
+    // Donner le premier update immédiatement
+    _provideRouteUpdate();
+  }
+
+  void _stopRouteGuidance() {
+    _speechTimer?.cancel();
+    _speechTimer = null;
+    _tts.stop();
+  }
+
+  Future<void> _provideRouteUpdate() async {
+    if (_routeSegments.isEmpty) return;
+
+    // Construction du message vocal
+    String message = "Mise à jour de votre trajet vers $_selectedDestination. ";
+
+    // Info sur le segment actuel
+    final currentSegment = _routeSegments.first;
+    message += "Vous êtes sur ${currentSegment.segmentName}. ";
+    message +=
+        "Température: ${currentSegment.startWeather.temperature.toInt()} degrés. ";
+    message += "Conditions: ${currentSegment.startWeather.weatherCondition}. ";
+
+    // Alertes météo
+    final alerts = _checkForWeatherAlerts();
+    if (alerts.isNotEmpty) {
+      message += "Attention: ";
+      for (var alert in alerts.take(2)) {
+        message += "${alert.message}. ";
+      }
+    } else {
+      message += "Pas d'alertes météo. Bonne route!";
+    }
+
+    // Parler le message
+    await _tts.speak(message);
+  }
+
+  Future<void> _giveRouteSummary() async {
+    if (_routeSegments.isEmpty) return;
+
+    String message = "Résumé de votre trajet vers $_selectedDestination. ";
+    message += "Distance totale: $_routeDistance. ";
+    message += "Durée estimée: $_routeDuration. ";
+
+    // Conditions de départ
+    final start = _routeSegments.first.startWeather;
+    message +=
+        "Conditions de départ: ${start.weatherCondition}, ${start.temperature.toInt()} degrés. ";
+
+    // Conditions d'arrivée
+    final end = _routeSegments.last.endWeather;
+    message +=
+        "Conditions d'arrivée prévues: ${end.weatherCondition}, ${end.temperature.toInt()} degrés. ";
+
+    // Alertes
+    final alerts = _checkForWeatherAlerts();
+    if (alerts.isNotEmpty) {
+      message +=
+          "Alertes en cours: ${alerts.length}. Dites 'alertes' pour les écouter. ";
+    }
+
+    await _tts.speak(message);
+  }
+
   Future<void> _loadInitialWeatherData() async {
     List<Marker> markers = [];
-    
+
     for (var cityEntry in _moroccanCities.entries) {
       try {
         final weather = await _fetchWeatherData(cityEntry.value);
@@ -1023,8 +839,9 @@ Future<void> _proceedWithRouteCalculation(String displayName, LatLng destination
           cityName: cityEntry.key,
           humidity: weather['humidity'],
           windSpeed: weather['windSpeed'],
+          rainIntensity: weather['rainIntensity'] ?? 0.0,
         );
-        
+
         markers.add(
           Marker(
             point: cityEntry.value,
@@ -1203,15 +1020,27 @@ Future<void> _proceedWithRouteCalculation(String displayName, LatLng destination
                 Column(
                   children: [
                     Icon(Icons.water_drop, color: Colors.blue),
-                    Text('${point.humidity.toInt()}%', style: TextStyle(color: Colors.white)),
-                    Text('Humidité', style: TextStyle(color: Colors.grey[400], fontSize: 12)),
+                    Text(
+                      '${point.humidity.toInt()}%',
+                      style: TextStyle(color: Colors.white),
+                    ),
+                    Text(
+                      'Humidité',
+                      style: TextStyle(color: Colors.grey[400], fontSize: 12),
+                    ),
                   ],
                 ),
                 Column(
                   children: [
                     Icon(Icons.air, color: Colors.green),
-                    Text('${point.windSpeed.toInt()} km/h', style: TextStyle(color: Colors.white)),
-                    Text('Vent', style: TextStyle(color: Colors.grey[400], fontSize: 12)),
+                    Text(
+                      '${point.windSpeed.toInt()} km/h',
+                      style: TextStyle(color: Colors.white),
+                    ),
+                    Text(
+                      'Vent',
+                      style: TextStyle(color: Colors.grey[400], fontSize: 12),
+                    ),
                   ],
                 ),
               ],
@@ -1221,25 +1050,73 @@ Future<void> _proceedWithRouteCalculation(String displayName, LatLng destination
       ),
     );
   }
+Future<void> _showVoiceSelection() async {
+  final voices = await _tts.getVoices;
+  final frenchVoices = voices.where((v) => v['locale'].contains('fr')).toList();
 
+  showModalBottomSheet(
+    context: context,
+    builder: (context) => Container(
+      padding: EdgeInsets.all(16),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text('Choisissez une voix', style: TextStyle(fontSize: 18)),
+          Divider(),
+          Expanded(
+            child: ListView.builder(
+              itemCount: frenchVoices.length,
+              itemBuilder: (context, index) {
+                final voice = frenchVoices[index];
+                return ListTile(
+                  title: Text(voice['name']),
+                  subtitle: Text(voice['locale']),
+                  onTap: () async {
+                    // Handle both Android and iOS cases
+                    if (Platform.isAndroid) {
+                      await _tts.setVoice({
+                        "name": voice['name'],
+                        "locale": voice['locale']
+                      });
+                    } else {
+                      await _tts.setVoice(voice['name']);
+                    }
+                    await _tts.speak('Voici le son de cette voix');
+                    Navigator.pop(context);
+                  },
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+}
   Future<List<LatLng>> _fetchRoutePoints(LatLng start, LatLng end) async {
     try {
-      final response = await http.get(
-        Uri.parse(
-          'https://api.openrouteservice.org/v2/directions/driving-car?'
-          'api_key=$openRouteServiceApiKey'
-          '&start=${start.longitude},${start.latitude}'
-          '&end=${end.longitude},${end.latitude}',
-        ),
-        headers: {'Accept': 'application/json, application/geo+json'},
-      ).timeout(Duration(seconds: 10));
+      final response = await http
+          .get(
+            Uri.parse(
+              'https://api.openrouteservice.org/v2/directions/driving-car?'
+              'api_key=$openRouteServiceApiKey'
+              '&start=${start.longitude},${start.latitude}'
+              '&end=${end.longitude},${end.latitude}',
+            ),
+            headers: {'Accept': 'application/json, application/geo+json'},
+          )
+          .timeout(Duration(seconds: 10));
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         final coordinates = data['features'][0]['geometry']['coordinates'];
-        return coordinates.map<LatLng>((coord) => LatLng(coord[1], coord[0])).toList();
+        return coordinates
+            .map<LatLng>((coord) => LatLng(coord[1], coord[0]))
+            .toList();
       } else {
-        throw Exception('Échec du chargement de la route: ${response.statusCode}');
+        throw Exception(
+          'Échec du chargement de la route: ${response.statusCode}',
+        );
       }
     } catch (e) {
       print('Erreur fetchRoutePoints: $e');
@@ -1249,21 +1126,25 @@ Future<void> _proceedWithRouteCalculation(String displayName, LatLng destination
 
   Future<void> _calculateRouteSegments(List<LatLng> routePoints) async {
     _routeSegments.clear();
-    
+
     // Sample points along the route (every 10 points)
     final step = math.max(1, routePoints.length ~/ 10);
-    
+
     for (int i = 0; i < routePoints.length - 1; i += step) {
       // Add delay between API calls
       if (i > 0) await Future.delayed(Duration(milliseconds: 200));
-      
+
       LatLng start = routePoints[i];
       LatLng end = routePoints[math.min(i + step, routePoints.length - 1)];
 
-      double distance = Geolocator.distanceBetween(
-        start.latitude, start.longitude,
-        end.latitude, end.longitude,
-      ) / 1000;
+      double distance =
+          Geolocator.distanceBetween(
+            start.latitude,
+            start.longitude,
+            end.latitude,
+            end.longitude,
+          ) /
+          1000;
 
       String segmentName;
       if (i == 0) {
@@ -1287,6 +1168,7 @@ Future<void> _proceedWithRouteCalculation(String displayName, LatLng destination
           cityName: i == 0 ? "Départ" : "Point ${i ~/ step + 1}",
           humidity: startWeatherData['humidity'],
           windSpeed: startWeatherData['windSpeed'],
+          rainIntensity: startWeatherData['rainIntensity'] ?? 0.0,
         );
 
         RouteWeatherPoint endWeather = RouteWeatherPoint(
@@ -1295,97 +1177,111 @@ Future<void> _proceedWithRouteCalculation(String displayName, LatLng destination
           temperature: endWeatherData['temperature'],
           weatherIcon: _getWeatherIcon(endWeatherData['condition']),
           weatherColor: _getWeatherColor(endWeatherData['condition']),
-          cityName: i >= routePoints.length - step ? "Arrivée" : "Point ${i ~/ step + 2}",
+          cityName: i >= routePoints.length - step
+              ? "Arrivée"
+              : "Point ${i ~/ step + 2}",
           humidity: endWeatherData['humidity'],
           windSpeed: endWeatherData['windSpeed'],
+          rainIntensity: endWeatherData['rainIntensity'] ?? 0.0,
         );
 
-        _routeSegments.add(RouteSegment(
-          startPoint: start,
-          endPoint: end,
-          distance: distance,
-          duration: distance / 80,
-          segmentName: segmentName,
-          startWeather: startWeather,
-          endWeather: endWeather,
-        ));
+        _routeSegments.add(
+          RouteSegment(
+            startPoint: start,
+            endPoint: end,
+            distance: distance,
+            duration: distance / 80,
+            segmentName: segmentName,
+            startWeather: startWeather,
+            endWeather: endWeather,
+          ),
+        );
       } catch (e) {
         print('Error in segment $i: $e');
         // Add segment with default weather data
-        _routeSegments.add(RouteSegment(
-          startPoint: start,
-          endPoint: end,
-          distance: distance,
-          duration: distance / 80,
-          segmentName: segmentName,
-          startWeather: RouteWeatherPoint(
-            location: start,
-            weatherCondition: 'partiellement nuageux',
-            temperature: 20.0,
-            weatherIcon: Icons.cloud,
-            weatherColor: Colors.blueGrey,
-            cityName: i == 0 ? "Départ" : "Point ${i ~/ step + 1}",
-            humidity: 50.0,
-            windSpeed: 10.0,
+        _routeSegments.add(
+          RouteSegment(
+            startPoint: start,
+            endPoint: end,
+            distance: distance,
+            duration: distance / 80,
+            segmentName: segmentName,
+            startWeather: RouteWeatherPoint(
+              location: start,
+              weatherCondition: 'partiellement nuageux',
+              temperature: 20.0,
+              weatherIcon: Icons.cloud,
+              weatherColor: Colors.blueGrey,
+              cityName: i == 0 ? "Départ" : "Point ${i ~/ step + 1}",
+              humidity: 50.0,
+              windSpeed: 10.0,
+              rainIntensity: 0.0,
+            ),
+            endWeather: RouteWeatherPoint(
+              location: end,
+              weatherCondition: 'partiellement nuageux',
+              temperature: 20.0,
+              weatherIcon: Icons.cloud,
+              weatherColor: Colors.blueGrey,
+              cityName: i >= routePoints.length - step
+                  ? "Arrivée"
+                  : "Point ${i ~/ step + 2}",
+              humidity: 50.0,
+              windSpeed: 10.0,
+              rainIntensity: 0.0,
+            ),
           ),
-          endWeather: RouteWeatherPoint(
-            location: end,
-            weatherCondition: 'partiellement nuageux',
-            temperature: 20.0,
-            weatherIcon: Icons.cloud,
-            weatherColor: Colors.blueGrey,
-            cityName: i >= routePoints.length - step ? "Arrivée" : "Point ${i ~/ step + 2}",
-            humidity: 50.0,
-            windSpeed: 10.0,
-          ),
-        ));
+        );
       }
     }
   }
 
-Future<void> _calculateRouteWeather(String destination) async {
-  if (destination.isEmpty) {
-    _showErrorSnackBar("Veuillez entrer une destination");
-    return;
-  }
+  Future<void> _calculateRouteWeather(String destination) async {
+    if (destination.isEmpty) {
+      _showErrorSnackBar("Veuillez entrer une destination");
+      return;
+    }
 
-  final List<String> availableCities = _moroccanCities.keys.toList();
-  final String? closestCity = findClosestCity(destination, availableCities);
-  
-  if (closestCity == null) {
-    // Trouver les 3 meilleures correspondances pour les suggestions
-    final suggestions = extractTop(
-      query: destination.toLowerCase(),
-      choices: availableCities,
-      limit: 3,
-      cutoff: 40,
-    ).where((match) => match.score > 40).toList();
-    
-    if (suggestions.isNotEmpty) {
-      final suggestionText = suggestions.map((s) => s.choice).join(', ');
+    final List<String> availableCities = _moroccanCities.keys.toList();
+    final String? closestCity = findClosestCity(destination, availableCities);
+
+    if (closestCity == null) {
+      // Trouver les 3 meilleures correspondances pour les suggestions
+      final suggestions = extractTop(
+        query: destination.toLowerCase(),
+        choices: availableCities,
+        limit: 3,
+        cutoff: 40,
+      ).where((match) => match.score > 40).toList();
+
+      if (suggestions.isNotEmpty) {
+        final suggestionText = suggestions.map((s) => s.choice).join(', ');
+        _showErrorSnackBar(
+          "Ville non trouvée. Vouliez-vous dire : $suggestionText?",
+          duration: Duration(seconds: 4),
+        );
+      } else {
+        _showErrorSnackBar(
+          "Ville non trouvée. Essayez un nom plus précis comme 'Marrakech', 'Casablanca'...",
+          duration: Duration(seconds: 4),
+        );
+      }
+      return;
+    }
+
+    // Si on a trouvé une ville proche mais différente de l'input
+    if (destination.toLowerCase() != closestCity.toLowerCase()) {
       _showErrorSnackBar(
-        "Ville non trouvée. Vouliez-vous dire : $suggestionText?",
-        duration: Duration(seconds: 4),
-      );
-    } else {
-      _showErrorSnackBar(
-        "Ville non trouvée. Essayez un nom plus précis comme 'Marrakech', 'Casablanca'...",
-        duration: Duration(seconds: 4),
+        "Itinéraire vers $closestCity",
+        duration: Duration(seconds: 2),
       );
     }
-    return;
-  }
-  
-  // Si on a trouvé une ville proche mais différente de l'input
-  if (destination.toLowerCase() != closestCity.toLowerCase()) {
-    _showErrorSnackBar(
-      "Itinéraire vers $closestCity",
-      duration: Duration(seconds: 2),
+
+    await _proceedWithRouteCalculation(
+      closestCity,
+      _moroccanCities[closestCity]!,
     );
   }
-  
-  await _proceedWithRouteCalculation(closestCity, _moroccanCities[closestCity]!);
-}
 
   void _fitMapToRoute(LatLng start, LatLng end) {
     double minLat = math.min(start.latitude, end.latitude);
@@ -1393,20 +1289,22 @@ Future<void> _calculateRouteWeather(String destination) async {
     double minLng = math.min(start.longitude, end.longitude);
     double maxLng = math.max(start.longitude, end.longitude);
 
-    LatLng center = LatLng(
-      (minLat + maxLat) / 2,
-      (minLng + maxLng) / 2,
-    );
+    LatLng center = LatLng((minLat + maxLat) / 2, (minLng + maxLng) / 2);
 
     double zoom = _calculateZoomLevel(minLat, maxLat, minLng, maxLng);
     _mapController.move(center, zoom);
   }
 
-  double _calculateZoomLevel(double minLat, double maxLat, double minLng, double maxLng) {
+  double _calculateZoomLevel(
+    double minLat,
+    double maxLat,
+    double minLng,
+    double maxLng,
+  ) {
     double latDiff = maxLat - minLat;
     double lngDiff = maxLng - minLng;
     double maxDiff = math.max(latDiff, lngDiff);
-    
+
     if (maxDiff > 5) return 6.0;
     if (maxDiff > 2) return 8.0;
     if (maxDiff > 1) return 9.0;
@@ -1414,20 +1312,24 @@ Future<void> _calculateRouteWeather(String destination) async {
     return 11.0;
   }
 
-  void _showErrorSnackBar(String message, {Duration duration = const Duration(seconds: 3)}) {
-  ScaffoldMessenger.of(context).showSnackBar(
-    SnackBar(
-      content: Text(message),
-      backgroundColor: Colors.red[700],
-      behavior: SnackBarBehavior.floating,
-      margin: EdgeInsets.all(16),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(10),
+  void _showErrorSnackBar(
+    String message, {
+    SnackBarAction? action,
+    Duration duration = const Duration(seconds: 3),
+  }) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: Colors.red[700],
+        behavior: SnackBarBehavior.floating,
+        margin: EdgeInsets.all(16),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        duration: duration,
+        action: action, // Now properly accepts a SnackBarAction
       ),
-      duration: duration,
-    ),
-  );
-}
+    );
+  }
+
   void _clearRoute() {
     setState(() {
       _routeLines.clear();
@@ -1436,10 +1338,10 @@ Future<void> _calculateRouteWeather(String destination) async {
       _showSearchBar = true;
       _searchController.clear();
     });
-    
+
     // Recharger les marqueurs météo des villes
     _loadInitialWeatherData();
-    
+
     // Revenir à la vue initiale
     if (_currentLocation != null) {
       _mapController.move(_currentLocation!, 6.0);
@@ -1453,23 +1355,36 @@ Future<void> _calculateRouteWeather(String destination) async {
         children: [
           _buildMap(),
           _buildHeader(),
-          
+
           if (_showSearchBar) _buildSearchBar(),
           if (_hasActiveRoute) ...[
             _buildRouteInfo(),
             _buildRouteSegmentsList(),
             _buildChangeDestinationButton(),
           ],
-          
-          _buildLocationButton(),
-          if (_hasActiveRoute) _buildResetButton(),
-            _buildAlertsButton(),
+          Positioned(
+            bottom: 16,
+            right: 16,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _buildLocationButton(),
+                SizedBox(height: 8), // Espace de 8 pixels
+                if (_hasActiveRoute) _buildResetButton(),
+                if (_hasActiveRoute) SizedBox(height: 8), // Espace conditionnel
+                _buildAlertsButton(),
+                SizedBox(height: 8), // Espace de 8 pixels
+                _buildRecommendationButton(),
+              ],
+            ),
+          ),
         ],
       ),
     );
   }
 
   Widget _buildMap() {
+    final fallbackLocation = LatLng(33.5731, -7.5898); // Casablanca par défaut
     return FlutterMap(
       mapController: _mapController,
       options: MapOptions(
@@ -1490,8 +1405,8 @@ Future<void> _calculateRouteWeather(String destination) async {
             markers: [
               Marker(
                 point: _currentLocation!,
-                width: 40,
-                height: 40,
+                width: 30,
+                height: 30,
                 child: Container(
                   decoration: BoxDecoration(
                     color: Color(0xFF00C853),
@@ -1540,8 +1455,8 @@ Future<void> _calculateRouteWeather(String destination) async {
                       Row(
                         children: [
                           SizedBox(
-                            width: 12,
-                            height: 12,
+                            width: 8,
+                            height: 8,
                             child: CircularProgressIndicator(
                               strokeWidth: 2,
                               valueColor: AlwaysStoppedAnimation<Color>(
@@ -1575,67 +1490,100 @@ Future<void> _calculateRouteWeather(String destination) async {
     );
   }
 
-  Widget _buildSearchBar() {
-    return Positioned(
-      top: 120,
-      left: 16,
-      right: 16,
-      child: Container(
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.2),
-              blurRadius: 10,
-              offset: Offset(0, 2),
-            ),
-          ],
-        ),
-        child: TextField(
-          controller: _searchController,
-          decoration: InputDecoration(
-            hintText: 'Rechercher une destination...',
-            prefixIcon: Icon(Icons.search, color: Colors.grey[600]),
-            suffixIcon: _isRouteCalculating
-                ? Padding(
-                    padding: EdgeInsets.all(12),
-                    child: SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        valueColor: AlwaysStoppedAnimation<Color>(
-                          Color(0xFF00C853),
-                        ),
-                      ),
-                    ),
-                  )
-                : IconButton(
-                    icon: Icon(Icons.arrow_forward, color: Color(0xFF00C853)),
-                    onPressed: () {
-                      if (_searchController.text.isNotEmpty) {
-                        _calculateRouteWeather(_searchController.text);
-                      }
-                    },
-                  ),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide.none,
-            ),
-            filled: true,
-            fillColor: Colors.white,
-            contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+ Widget _buildSearchBar() {
+  return Positioned(
+    top: 120,
+    left: 16,
+    right: 16,
+    child: Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.2),
+            blurRadius: 10,
+            offset: Offset(0, 2),
           ),
-          onSubmitted: (value) {
-            if (value.isNotEmpty) {
-              _calculateRouteWeather(value);
-            }
-          },
-        ),
+        ],
       ),
-    );
-  }
+      child: Row(
+        children: [
+          Expanded(
+            child: TextField(
+              controller: _searchController,
+              decoration: InputDecoration(
+                hintText: 'Rechercher une destination...',
+                prefixIcon: Icon(Icons.search, color: Colors.grey[600]),
+                border: InputBorder.none,
+                contentPadding: EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 12,
+                ),
+              ),
+              onSubmitted: (value) {
+                if (value.isNotEmpty) {
+                  _calculateRouteWeather(value);
+                }
+              },
+            ),
+          ),
+          if (_isRouteCalculating)
+            Padding(
+              padding: EdgeInsets.all(12),
+              child: SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  valueColor: AlwaysStoppedAnimation<Color>(
+                    Color(0xFF00C853),
+                  ),
+                ),
+              ),
+            )
+          else
+            IconButton(
+              icon: Icon(
+                Icons.mic,
+                color: _isListening ? Colors.red : Color(0xFF00C853),
+              ),
+              onPressed: _listen,
+            ),
+          RawMaterialButton(
+            onPressed: () {
+              if (_isSpeaking) {
+                _stopRouteGuidance();
+              } else if (_hasActiveRoute) {
+                _startRouteGuidance();
+              }
+            },
+            elevation: 0,
+            hoverElevation: 0,
+            focusElevation: 0,
+            highlightElevation: 0,
+            fillColor: _isSpeaking ? Colors.red : Colors.white,
+            shape: CircleBorder(),
+            constraints: BoxConstraints.tightFor(width: 40, height: 40),
+            child: Icon(
+              _isSpeaking ? Icons.volume_off : Icons.volume_up,
+              color: const Color(0xFF6147F1),
+              size: 20,
+            ),
+          ),
+          IconButton(
+            icon: Icon(Icons.arrow_forward, color: Color(0xFF00C853)),
+            onPressed: () {
+              if (_searchController.text.isNotEmpty) {
+                _calculateRouteWeather(_searchController.text);
+              }
+            },
+          ),
+        ],
+      ),
+    ),
+  );
+}
 
   Widget _buildRouteInfo() {
     return Positioned(
@@ -1739,8 +1687,10 @@ Future<void> _calculateRouteWeather(String destination) async {
                     children: [
                       Column(
                         children: [
-                          Icon(segment.startWeather.weatherIcon, 
-                              color: segment.startWeather.weatherColor),
+                          Icon(
+                            segment.startWeather.weatherIcon,
+                            color: segment.startWeather.weatherColor,
+                          ),
                           Text(
                             "${segment.startWeather.temperature.toInt()}°C",
                             style: TextStyle(color: Colors.white),
@@ -1750,8 +1700,10 @@ Future<void> _calculateRouteWeather(String destination) async {
                       Icon(Icons.arrow_forward, color: Colors.grey),
                       Column(
                         children: [
-                          Icon(segment.endWeather.weatherIcon,
-                              color: segment.endWeather.weatherColor),
+                          Icon(
+                            segment.endWeather.weatherIcon,
+                            color: segment.endWeather.weatherColor,
+                          ),
                           Text(
                             "${segment.endWeather.temperature.toInt()}°C",
                             style: TextStyle(color: Colors.white),
@@ -1766,6 +1718,26 @@ Future<void> _calculateRouteWeather(String destination) async {
           },
         ),
       ),
+    );
+  }
+
+  Widget _buildRecommendationButton() {
+    return FloatingActionButton(
+      onPressed: () {
+        if (_routeSegments.isNotEmpty) {
+          final firstSegment = _routeSegments.first;
+          final weather = firstSegment.startWeather;
+          _getRecommendationFromAPI(
+            temperature: weather.temperature,
+            humidity: weather.humidity,
+            windSpeed: weather.windSpeed,
+            rainIntensity: weather.rainIntensity,
+          );
+        }
+      },
+      backgroundColor: Colors.blueAccent,
+      mini: true,
+      child: Icon(Icons.tips_and_updates, color: Colors.white),
     );
   }
 
@@ -1788,35 +1760,29 @@ Future<void> _calculateRouteWeather(String destination) async {
   }
 
   Widget _buildLocationButton() {
-    return Positioned(
-      bottom: 140,
-      right: 16,
-      child: FloatingActionButton(
-        onPressed: _getCurrentLocation,
-        backgroundColor: Color(0xFF00C853),
-        child: _isLocationLoading
-            ? SizedBox(
-                width: 20,
-                height: 20,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                ),
-              )
-            : Icon(Icons.my_location, color: Colors.white),
-      ),
+    return FloatingActionButton(
+      onPressed: _getCurrentLocation,
+      backgroundColor: Color(0xFF00C853),
+      mini: true,
+      child: _isLocationLoading
+          ? SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+              ),
+            )
+          : Icon(Icons.my_location, color: Colors.white),
     );
   }
 
   Widget _buildResetButton() {
-    return Positioned(
-      bottom: 80,
-      right: 16,
-      child: FloatingActionButton(
-        onPressed: _clearRoute,
-        backgroundColor: Colors.red[700],
-        child: Icon(Icons.clear, color: Colors.white),
-      ),
+    return FloatingActionButton(
+      onPressed: _clearRoute,
+      backgroundColor: Colors.red[700],
+      mini: true,
+      child: Icon(Icons.clear, color: Colors.white),
     );
   }
 }
